@@ -1,6 +1,6 @@
 {
   "name": "B Code IDE",
-  "description": "Build, run, debug, and preview web apps in an isolated browser IDE with real-time diagnostics, terminal, Git version control, and multi-user collaboration.",
+  "description": "Upload and run code files in Python, JavaScript, Java, C++, C, and MySQL SQL. In-browser sandbox compiler and execution environment.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

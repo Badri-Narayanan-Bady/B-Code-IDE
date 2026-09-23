@@ -1,357 +1,357 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Terminal as TerminalIcon,
-  AlertTriangle,
+  Table as TableIcon,
+  FileText,
   AlertCircle,
-  FileCode,
-  CheckCircle2,
-  Trash2,
-  Maximize2,
-  Minimize2,
-  ChevronRight,
   Play,
+  RotateCcw,
   Copy,
   Check,
-  ShieldCheck,
-  Gauge
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Database
 } from 'lucide-react';
-import { ActiveBottomTab, Diagnostic, VFSNode } from '../types/ide';
+import { ExecutionResult, SupportedLanguage, SQLQueryResult } from '../types/ide';
 
 interface TerminalProps {
-  activeTab: ActiveBottomTab;
-  onChangeTab: (tab: ActiveBottomTab) => void;
-  diagnostics: Diagnostic[];
-  onSelectDiagnosticLine: (line: number) => void;
-  outputLogs: { type: 'log' | 'warn' | 'error' | 'info'; text: string; time: string }[];
-  onClearLogs: () => void;
-  onExecuteCommand: (cmd: string) => Promise<string | void>;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-  testComponent?: React.ReactNode;
-  profilerComponent?: React.ReactNode;
-  failedTestsCount?: number;
+  result: ExecutionResult | null;
+  isRunning: boolean;
+  language: SupportedLanguage;
+  stdinInput: string;
+  onChangeStdin: (val: string) => void;
+  onClearOutput: () => void;
+  onRun: () => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
 export const Terminal: React.FC<TerminalProps> = ({
-  activeTab,
-  onChangeTab,
-  diagnostics,
-  onSelectDiagnosticLine,
-  outputLogs,
-  onClearLogs,
-  onExecuteCommand,
-  isExpanded,
+  result,
+  isRunning,
+  language,
+  stdinInput,
+  onChangeStdin,
+  onClearOutput,
+  onRun,
+  isExpanded = false,
   onToggleExpand,
-  testComponent,
-  profilerComponent,
-  failedTestsCount = 0,
 }) => {
-  const [input, setInput] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState(-1);
-  const [terminalLines, setTerminalLines] = useState<{ id: string; text: string; type: 'prompt' | 'output' | 'error' | 'success' }[]>([
-    { id: '1', text: 'B Code Sandbox v1.0.0 [Linux x86_64 web-container]', type: 'output' },
-    { id: '2', text: 'Type "help" to see available terminal commands, or "run" to execute current project.', type: 'output' },
-  ]);
+  const [activeTab, setActiveTab] = useState<'output' | 'sql' | 'stdin' | 'compiler'>(
+    language === 'sql' ? 'sql' : 'output'
+  );
   const [copied, setCopied] = useState(false);
 
-  const endRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [terminalLines, outputLogs]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cmd = input.trim();
-    if (!cmd) return;
-
-    // Add prompt line
-    setTerminalLines((prev) => [
-      ...prev,
-      { id: 'cmd-' + Date.now(), text: `b-code@sandbox:~/project$ ${cmd}`, type: 'prompt' },
-    ]);
-    setHistory((prev) => [...prev, cmd]);
-    setHistoryIdx(-1);
-    setInput('');
-
-    if (cmd === 'clear') {
-      setTerminalLines([]);
-      return;
+  // Switch to SQL tab automatically if language is SQL and we get results
+  React.useEffect(() => {
+    if (language === 'sql' && result?.sqlResults && result.sqlResults.length > 0) {
+      setActiveTab('sql');
     }
+  }, [language, result]);
 
-    try {
-      const response = await onExecuteCommand(cmd);
-      if (response) {
-        setTerminalLines((prev) => [
-          ...prev,
-          { id: 'res-' + Date.now(), text: response, type: 'output' },
-        ]);
-      }
-    } catch (err: any) {
-      setTerminalLines((prev) => [
-        ...prev,
-        { id: 'err-' + Date.now(), text: err?.message || String(err), type: 'error' },
-      ]);
-    }
+  const handleCopyOutput = () => {
+    if (!result) return;
+    const combined = [...result.stdout, ...result.stderr].join('\n');
+    navigator.clipboard.writeText(combined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (history.length === 0) return;
-      const nextIdx = historyIdx === -1 ? history.length - 1 : Math.max(0, historyIdx - 1);
-      setHistoryIdx(nextIdx);
-      setInput(history[nextIdx] || '');
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIdx === -1) return;
-      const nextIdx = historyIdx + 1;
-      if (nextIdx >= history.length) {
-        setHistoryIdx(-1);
-        setInput('');
-      } else {
-        setHistoryIdx(nextIdx);
-        setInput(history[nextIdx] || '');
-      }
-    }
-  };
-
-  const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
-  const warningCount = diagnostics.filter((d) => d.severity === 'warning').length;
+  const hasOutput = result && (result.stdout.length > 0 || result.stderr.length > 0);
 
   return (
     <div
-      className={`bg-[#0b0f19] border-t border-neutral-800 flex flex-col shrink-0 transition-all duration-200 ${
-        isExpanded ? 'h-96' : 'h-48'
+      className={`bg-neutral-950 border-t border-neutral-800 flex flex-col transition-all duration-200 select-text ${
+        isExpanded ? 'h-96 md:h-[480px]' : 'h-64 md:h-72'
       }`}
     >
-      {/* Tab Navigation Header */}
-      <div className="h-8 bg-neutral-900 border-b border-neutral-800 px-3 flex items-center justify-between select-none">
-        <div className="flex items-center gap-1 text-xs">
+      {/* Terminal Header & Navigation Tabs */}
+      <div className="h-10 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 shrink-0 select-none">
+        {/* Tabs */}
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => onChangeTab('terminal')}
-            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded-t transition-colors ${
-              activeTab === 'terminal'
-                ? 'bg-[#0b0f19] text-white border-t-2 border-t-cyan-500'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <TerminalIcon size={13} />
-            <span>Terminal</span>
-          </button>
-
-          <button
-            onClick={() => onChangeTab('output')}
-            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded-t transition-colors ${
+            onClick={() => setActiveTab('output')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               activeTab === 'output'
-                ? 'bg-[#0b0f19] text-white border-t-2 border-t-cyan-500'
-                : 'text-neutral-400 hover:text-white'
+                ? 'bg-neutral-800 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
             }`}
           >
-            <ChevronRight size={13} />
+            <TerminalIcon size={14} className="text-cyan-400" />
             <span>Output</span>
-            {outputLogs.length > 0 && (
-              <span className="text-[10px] bg-neutral-800 px-1 rounded-full font-mono">
-                {outputLogs.length}
-              </span>
+            {result && result.stderr.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
             )}
           </button>
 
+          {/* SQL Results Tab */}
+          {language === 'sql' && (
+            <button
+              onClick={() => setActiveTab('sql')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activeTab === 'sql'
+                  ? 'bg-neutral-800 text-emerald-400 shadow-sm'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
+              }`}
+            >
+              <Database size={14} />
+              <span>SQL Tables</span>
+              {result?.sqlResults && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-300 font-mono border border-emerald-800/40">
+                  {result.sqlResults.length}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Program Input (STDIN) Tab */}
           <button
-            onClick={() => onChangeTab('problems')}
-            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded-t transition-colors ${
-              activeTab === 'problems'
-                ? 'bg-[#0b0f19] text-white border-t-2 border-t-cyan-500'
-                : 'text-neutral-400 hover:text-white'
+            onClick={() => setActiveTab('stdin')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTab === 'stdin'
+                ? 'bg-neutral-800 text-amber-400 shadow-sm'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
             }`}
+            title="Custom inputs fed to cin, scanf, input(), or Scanner"
           >
-            <AlertCircle size={13} className={errorCount > 0 ? 'text-rose-400' : ''} />
-            <span>Problems</span>
-            {diagnostics.length > 0 && (
-              <span
-                className={`text-[10px] px-1 rounded-full font-mono ${
-                  errorCount > 0 ? 'bg-rose-900/60 text-rose-300' : 'bg-amber-900/60 text-amber-300'
-                }`}
-              >
-                {diagnostics.length}
-              </span>
+            <FileText size={14} />
+            <span>Program Input (STDIN)</span>
+            {stdinInput.trim().length > 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             )}
           </button>
 
+          {/* Compiler Diagnostics Tab */}
           <button
-            onClick={() => onChangeTab('tests')}
-            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded-t transition-colors ${
-              activeTab === 'tests'
-                ? 'bg-[#0b0f19] text-white border-t-2 border-t-cyan-500'
-                : 'text-neutral-400 hover:text-white'
+            onClick={() => setActiveTab('compiler')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTab === 'compiler'
+                ? 'bg-neutral-800 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
             }`}
           >
-            <ShieldCheck size={13} className="text-emerald-400" />
-            <span>Test Suite</span>
-            {failedTestsCount > 0 && (
-              <span className="text-[10px] bg-rose-900/60 text-rose-300 px-1 rounded-full font-mono">
-                {failedTestsCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => onChangeTab('profiler')}
-            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded-t transition-colors ${
-              activeTab === 'profiler'
-                ? 'bg-[#0b0f19] text-white border-t-2 border-t-cyan-500'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <Gauge size={13} className="text-amber-400" />
-            <span>Profiler</span>
+            <AlertCircle size={14} className="text-violet-400" />
+            <span>Diagnostics</span>
           </button>
         </div>
 
-        {/* Tab Controls (Clear, Maximize) */}
-        <div className="flex items-center gap-1 text-neutral-400">
+        {/* Right Status & Controls */}
+        <div className="flex items-center gap-2">
+          {/* Execution Time & Status Badge */}
+          {result && !isRunning && (
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded bg-neutral-950/80 border border-neutral-800 text-[11px] font-mono">
+              <span className="flex items-center gap-1 text-neutral-400">
+                <Clock size={12} />
+                {result.executionTimeMs} ms
+              </span>
+              <span className="text-neutral-700">•</span>
+              {result.success ? (
+                <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 size={12} /> Exit 0
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-rose-400 font-medium">
+                  <XCircle size={12} /> Exit {result.exitCode || 1}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Copy Button */}
+          {hasOutput && (
+            <button
+              onClick={handleCopyOutput}
+              className="p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+              title="Copy output text"
+            >
+              {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            </button>
+          )}
+
+          {/* Clear Output */}
           <button
-            onClick={() => {
-              if (activeTab === 'terminal') setTerminalLines([]);
-              else onClearLogs();
-            }}
-            className="p-1 hover:text-white hover:bg-neutral-800 rounded"
-            title="Clear panel"
+            onClick={onClearOutput}
+            className="p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+            title="Clear output logs"
           >
-            <Trash2 size={13} />
+            <RotateCcw size={14} />
           </button>
-          <button
-            onClick={onToggleExpand}
-            className="p-1 hover:text-white hover:bg-neutral-800 rounded"
-            title={isExpanded ? 'Collapse' : 'Expand'}
-          >
-            {isExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
+
+          {/* Toggle Expand / Collapse */}
+          {onToggleExpand && (
+            <button
+              onClick={onToggleExpand}
+              className="p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+              title={isExpanded ? 'Collapse panel' : 'Expand panel'}
+            >
+              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-2 font-mono text-xs text-neutral-300">
-        {/* TAB 1: TERMINAL */}
-        {activeTab === 'terminal' && (
-          <div className="space-y-1" onClick={() => inputRef.current?.focus()}>
-            {terminalLines.map((line) => (
-              <div
-                key={line.id}
-                className={`whitespace-pre-wrap leading-relaxed ${
-                  line.type === 'prompt'
-                    ? 'text-cyan-400 font-semibold'
-                    : line.type === 'error'
-                    ? 'text-rose-400'
-                    : line.type === 'success'
-                    ? 'text-emerald-400'
-                    : 'text-neutral-300'
-                }`}
-              >
-                {line.text}
-              </div>
-            ))}
-
-            {/* Current prompt input */}
-            <form onSubmit={handleSubmit} className="flex items-center gap-1 pt-1">
-              <span className="text-cyan-400 font-semibold select-none">
-                b-code@sandbox:~/project$
-              </span>
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="flex-1 bg-transparent text-white outline-none border-none p-0 font-mono text-xs"
-                autoFocus
-              />
-            </form>
-            <div ref={endRef} />
-          </div>
-        )}
-
-        {/* TAB 2: OUTPUT / CONSOLE */}
+      {/* Terminal Body Content */}
+      <div className="flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
+        {/* TAB 1: OUTPUT (STDOUT / STDERR) */}
         {activeTab === 'output' && (
           <div className="space-y-1">
-            {outputLogs.length === 0 ? (
-              <div className="text-neutral-500 py-4 text-center">No program output recorded yet. Run a script or preview app.</div>
-            ) : (
-              outputLogs.map((log, i) => (
-                <div key={i} className="flex items-start gap-2 py-0.5 leading-relaxed">
-                  <span className="text-[10px] text-neutral-500 shrink-0 select-none">
-                    [{log.time}]
-                  </span>
-                  <span
-                    className={`whitespace-pre-wrap ${
-                      log.type === 'error'
-                        ? 'text-rose-400 font-semibold'
-                        : log.type === 'warn'
-                        ? 'text-amber-400'
-                        : log.type === 'info'
-                        ? 'text-sky-400'
-                        : 'text-neutral-200'
-                    }`}
-                  >
-                    {log.text}
-                  </span>
-                </div>
-              ))
+            {isRunning && (
+              <div className="flex items-center gap-2 text-cyan-400 py-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                <span>Executing {language} program...</span>
+              </div>
             )}
-            <div ref={endRef} />
+
+            {!isRunning && !result && (
+              <div className="text-neutral-500 py-6 text-center">
+                <p>Ready to run. Click "Run Code" or press F5 to execute.</p>
+                <p className="text-[11px] text-neutral-600 mt-1">
+                  Supports standard I/O, loops, arithmetic, functions, and algorithms.
+                </p>
+              </div>
+            )}
+
+            {result && (
+              <>
+                {result.stdout.map((line, idx) => (
+                  <div key={`out-${idx}`} className="text-neutral-200 whitespace-pre-wrap break-all">
+                    {line}
+                  </div>
+                ))}
+                {result.stderr.map((err, idx) => (
+                  <div key={`err-${idx}`} className="text-rose-400 font-medium whitespace-pre-wrap break-all">
+                    {err}
+                  </div>
+                ))}
+
+                {result.stdout.length === 0 && result.stderr.length === 0 && (
+                  <div className="text-neutral-500 italic">
+                    Program exited with code {result.exitCode} (No output printed).
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
-        {/* TAB 3: PROBLEMS / DIAGNOSTICS */}
-        {activeTab === 'problems' && (
-          <div className="space-y-1.5">
-            {diagnostics.length === 0 ? (
-              <div className="flex items-center gap-2 text-emerald-400 py-4 px-2">
-                <CheckCircle2 size={16} />
-                <span>No problems detected in the current workspace.</span>
+        {/* TAB 2: SQL RESULTS TABLE */}
+        {activeTab === 'sql' && (
+          <div className="space-y-4">
+            {!result?.sqlResults || result.sqlResults.length === 0 ? (
+              <div className="text-neutral-500 py-6 text-center">
+                <Database size={24} className="mx-auto mb-2 text-neutral-600" />
+                <p>Run your SQL queries to see live MySQL relational data tables.</p>
+                <p className="text-[11px] text-neutral-600 mt-1">
+                  Supports CREATE TABLE, INSERT INTO, SELECT, WHERE, ORDER BY, GROUP BY.
+                </p>
               </div>
             ) : (
-              diagnostics.map((d) => (
-                <div
-                  key={d.id}
-                  onClick={() => onSelectDiagnosticLine(d.line)}
-                  className="flex items-center justify-between p-1.5 hover:bg-neutral-800 rounded cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    {d.severity === 'error' ? (
-                      <AlertCircle size={14} className="text-rose-400 shrink-0" />
-                    ) : d.severity === 'warning' ? (
-                      <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-                    ) : (
-                      <CheckCircle2 size={14} className="text-sky-400 shrink-0" />
-                    )}
-                    <span className="text-neutral-200">{d.message}</span>
-                    {d.source && (
-                      <span className="text-[10px] text-neutral-500 font-sans">({d.source})</span>
-                    )}
+              result.sqlResults.map((qr, idx) => (
+                <div key={idx} className="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
+                  {/* Query Header */}
+                  <div className="px-3 py-2 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between">
+                    <span className="text-cyan-300 font-medium truncate max-w-lg">
+                      {qr.statement}
+                    </span>
+                    <span className="text-[11px] text-neutral-400 shrink-0">
+                      {qr.rows.length} rows ({qr.executionTimeMs} ms)
+                    </span>
                   </div>
-                  <span className="text-neutral-400 font-mono text-[11px]">
-                    Ln {d.line}, Col {d.column}
-                  </span>
+
+                  {/* Relational Table Grid */}
+                  {qr.isSelect && qr.columns.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-neutral-850/80 border-b border-neutral-800 text-neutral-300">
+                            {qr.columns.map((col, cIdx) => (
+                              <th key={cIdx} className="p-2 font-semibold border-r border-neutral-800/60 last:border-none">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {qr.rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={qr.columns.length} className="p-3 text-center text-neutral-500">
+                                Empty set (0 rows)
+                              </td>
+                            </tr>
+                          ) : (
+                            qr.rows.map((row, rIdx) => (
+                              <tr
+                                key={rIdx}
+                                className={`border-b border-neutral-800/40 hover:bg-neutral-800/40 ${
+                                  rIdx % 2 === 0 ? 'bg-neutral-900/60' : 'bg-neutral-900'
+                                }`}
+                              >
+                                {row.map((cell, cIdx) => (
+                                  <td
+                                    key={cIdx}
+                                    className="p-2 border-r border-neutral-800/40 last:border-none text-neutral-200"
+                                  >
+                                    {cell === null ? (
+                                      <span className="text-neutral-500 italic">NULL</span>
+                                    ) : (
+                                      String(cell)
+                                    )}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-3 text-emerald-400">
+                      Query OK, {qr.affectedRows || 0} rows affected ({qr.executionTimeMs / 1000} sec)
+                    </div>
+                  )}
                 </div>
               ))
             )}
           </div>
         )}
 
-        {/* TAB 4: TEST RUNNER */}
-        {activeTab === 'tests' && (
-          <div className="h-full -m-3">
-            {testComponent}
+        {/* TAB 3: PROGRAM INPUT (STDIN) */}
+        {activeTab === 'stdin' && (
+          <div className="flex flex-col h-full space-y-2">
+            <div className="flex items-center justify-between text-xs text-neutral-400">
+              <span>Standard Input Stream (stdin)</span>
+              <span className="text-[11px] text-neutral-500">One input per line</span>
+            </div>
+            <textarea
+              value={stdinInput}
+              onChange={(e) => onChangeStdin(e.target.value)}
+              placeholder="Enter inputs here before running your program (e.g. for cin >> x, input(), or Scanner.nextInt())..."
+              className="flex-1 w-full bg-neutral-900 border border-neutral-800 rounded-md p-2.5 font-mono text-xs text-neutral-200 resize-none outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              rows={6}
+            />
           </div>
         )}
 
-        {/* TAB 5: PERFORMANCE PROFILER */}
-        {activeTab === 'profiler' && (
-          <div className="h-full -m-3">
-            {profilerComponent}
+        {/* TAB 4: COMPILER DIAGNOSTICS */}
+        {activeTab === 'compiler' && (
+          <div className="space-y-2">
+            <div className="text-xs text-neutral-400 font-semibold mb-2">
+              Compiler / Runtime Diagnostics
+            </div>
+            {result?.compilerOutput ? (
+              <pre className="bg-neutral-900 border border-neutral-800 p-3 rounded text-neutral-300 whitespace-pre-wrap">
+                {result.compilerOutput}
+              </pre>
+            ) : (
+              <div className="text-neutral-500 py-4 text-center">
+                No compilation warnings or errors reported.
+              </div>
+            )}
           </div>
         )}
       </div>

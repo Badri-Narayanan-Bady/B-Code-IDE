@@ -1,343 +1,272 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import {
   Play,
-  Share2,
+  Upload,
   Download,
-  Settings,
-  Eye,
-  FolderPlus,
-  FilePlus,
-  RefreshCw,
+  FileCode,
   Sparkles,
-  ChevronDown,
-  Terminal as TerminalIcon,
-  Check,
-  Code2,
-  FolderKanban,
-  HelpCircle,
+  Settings,
   Keyboard,
-  ShieldCheck,
-  Gauge,
-  Binary,
-  AlignLeft,
-  Network
+  RefreshCw,
+  RotateCcw,
+  CheckCircle2,
+  FilePlus,
+  Terminal as TerminalIcon
 } from 'lucide-react';
-import { TEMPLATES } from '../services/storage';
+import { SupportedLanguage, CodeFile } from '../types/ide';
+import { LANGUAGES } from '../utils/languages';
 
 interface TopBarProps {
+  file: CodeFile;
+  onUpdateFileName: (name: string) => void;
+  onSelectLanguage: (lang: SupportedLanguage) => void;
+  onUploadFile: (file: File) => void;
+  onDownloadFile: () => void;
+  onFormatCode: () => void;
+  onResetCode: () => void;
+  onNewTemplate: (lang: SupportedLanguage) => void;
   onRun: () => void;
-  onTogglePreview: () => void;
-  showPreview: boolean;
-  onExportZip: () => void;
-  onOpenSettings: () => void;
-  onOpenShare: () => void;
-  onNewFile: () => void;
-  onNewFolder: () => void;
-  onSwitchTemplate: (key: string) => void;
-  activeTemplate: string;
   isRunning: boolean;
-  peerCount: number;
-  workspaceName?: string;
-  isPrivateWorkspace?: boolean;
-  roomId?: string;
-  onOpenWorkspaces?: () => void;
-  onOpenVercelDeploy?: () => void;
-  onOpenGuide?: () => void;
-  onOpenShortcuts?: () => void;
-  onFormatDocument?: () => void;
-  onOpenRegexTester?: () => void;
-  onOpenAstModal?: () => void;
-  onOpenTestRunner?: () => void;
-  onOpenProfiler?: () => void;
+  onOpenSettings: () => void;
+  onOpenShortcuts: () => void;
+  onToggleTerminal?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
+  file,
+  onUpdateFileName,
+  onSelectLanguage,
+  onUploadFile,
+  onDownloadFile,
+  onFormatCode,
+  onResetCode,
+  onNewTemplate,
   onRun,
-  onTogglePreview,
-  showPreview,
-  onExportZip,
-  onOpenSettings,
-  onOpenShare,
-  onNewFile,
-  onNewFolder,
-  onSwitchTemplate,
-  activeTemplate,
   isRunning,
-  peerCount,
-  workspaceName = 'Personal Project',
-  isPrivateWorkspace = true,
-  roomId,
-  onOpenWorkspaces,
-  onOpenVercelDeploy,
-  onOpenGuide,
+  onOpenSettings,
   onOpenShortcuts,
-  onFormatDocument,
-  onOpenRegexTester,
-  onOpenAstModal,
-  onOpenTestRunner,
-  onOpenProfiler,
+  onToggleTerminal,
 }) => {
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentLangMeta = LANGUAGES[file.language] || LANGUAGES.python;
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      onUploadFile(selected);
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    // Reset input so same file can be re-uploaded if desired
+    e.target.value = '';
+  };
+
+  const lineCount = file.content.split('\n').length;
+  const charCount = file.content.length;
+  const fileSizeKb = (new Blob([file.content]).size / 1024).toFixed(1);
 
   return (
-    <header className="h-12 bg-neutral-900 border-b border-neutral-800 px-3 sm:px-4 flex items-center justify-between select-none z-30 shrink-0">
-      {/* Zone 1: Wordmark & Workspace switcher */}
+    <header className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-3 md:px-4 shrink-0 select-none z-30">
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInputChange}
+        className="hidden"
+        accept=".py,.js,.java,.cpp,.cc,.cxx,.c,.h,.sql,.txt"
+      />
+
+      {/* Left: Brand + Active File Info */}
       <div className="flex items-center gap-3">
-        <a href="/" className="flex items-center gap-2 text-white font-semibold text-sm tracking-tight hover:opacity-90 transition-opacity shrink-0">
-          <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center shadow-sm text-white">
-            <Code2 size={16} />
+        <div className="flex items-center gap-2 pr-2 border-r border-neutral-800">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-cyan-900/30">
+            <span className="text-sm font-mono tracking-tighter">B</span>
           </div>
-          <span className="hidden sm:inline font-bold">B Code</span>
-        </a>
-
-        {/* Workspace Pill */}
-        {onOpenWorkspaces && (
-          <button
-            onClick={onOpenWorkspaces}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-800/90 hover:bg-neutral-750 border border-neutral-700/80 text-xs text-neutral-200 transition-colors cursor-pointer max-w-[200px] truncate"
-            title="Click to manage or switch workspaces"
-          >
-            <FolderKanban size={13} className={isPrivateWorkspace ? 'text-cyan-400 shrink-0' : 'text-indigo-400 shrink-0'} />
-            <span className="truncate font-medium">{workspaceName}</span>
-            {roomId && (
-              <span className="text-[10px] font-mono bg-indigo-500/20 text-indigo-300 px-1 rounded shrink-0">
-                #{roomId}
+          <div className="hidden sm:block">
+            <h1 className="text-sm font-bold text-white tracking-tight leading-none flex items-center gap-1.5">
+              B Code IDE
+              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/40">
+                Sandbox
               </span>
-            )}
-            <ChevronDown size={11} className="opacity-50 shrink-0" />
-          </button>
-        )}
+            </h1>
+          </div>
+        </div>
 
-        {/* Zone 2: Menus & Navigation */}
-        <div ref={menuRef} className="hidden lg:flex items-center gap-1 text-xs text-neutral-300">
-          {/* File Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setOpenMenu(openMenu === 'file' ? null : 'file')}
-              className={`px-2.5 py-1 rounded hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-1 ${
-                openMenu === 'file' ? 'bg-neutral-800 text-white' : ''
-              }`}
-            >
-              File <ChevronDown size={12} className="opacity-60" />
-            </button>
-            {openMenu === 'file' && (
-              <div className="absolute top-full left-0 mt-1 w-52 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 z-50 text-xs">
-                <button
-                  onClick={() => { onNewFile(); setOpenMenu(null); }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                >
-                  <FilePlus size={14} /> New File
-                </button>
-                <button
-                  onClick={() => { onNewFolder(); setOpenMenu(null); }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                >
-                  <FolderPlus size={14} /> New Folder
-                </button>
-                <div className="h-px bg-neutral-700 my-1" />
-                <button
-                  onClick={() => { onExportZip(); setOpenMenu(null); }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                >
-                  <Download size={14} /> Download ZIP
-                </button>
-                {onOpenVercelDeploy && (
-                  <button
-                    onClick={() => { onOpenVercelDeploy(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                  >
-                    {/* Vercel icon */}
-                    <svg width="13" height="13" viewBox="0 0 1155 1000" fill="currentColor">
-                      <path d="m577.3 0 577.4 1000H0z" />
-                    </svg>
-                    Deploy to Vercel
-                  </button>
-                )}
-              </div>
+        {/* Active File Editor Tab & Metadata */}
+        <div className="flex items-center gap-2">
+          {/* File Name input / badge */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-900 border border-neutral-800 hover:border-neutral-700 transition-colors">
+            <FileCode size={14} style={{ color: currentLangMeta.color }} />
+            <input
+              type="text"
+              value={file.name}
+              onChange={(e) => onUpdateFileName(e.target.value)}
+              className="bg-transparent text-xs font-mono font-medium text-neutral-200 focus:text-white outline-none w-28 md:w-36 transition-all"
+              title="Click to rename active file"
+            />
+            {file.isDirty && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Unsaved modifications" />
             )}
           </div>
 
-          {/* Templates Menu */}
+          {/* Language Selector Dropdown */}
           <div className="relative">
-            <button
-              onClick={() => setOpenMenu(openMenu === 'templates' ? null : 'templates')}
-              className={`px-2.5 py-1 rounded hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-1 ${
-                openMenu === 'templates' ? 'bg-neutral-800 text-white' : ''
-              }`}
+            <select
+              value={file.language}
+              onChange={(e) => onSelectLanguage(e.target.value as SupportedLanguage)}
+              className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-xs rounded-md px-2.5 py-1.5 font-medium outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer transition-colors"
             >
-              Templates <ChevronDown size={12} className="opacity-60" />
-            </button>
-            {openMenu === 'templates' && (
-              <div className="absolute top-full left-0 mt-1 w-64 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 z-50 text-xs">
-                <div className="px-3 py-1 text-[11px] font-medium text-neutral-400">Starter Sandboxes</div>
-                {Object.entries(TEMPLATES).map(([key, t]) => (
-                  <button
-                    key={key}
-                    onClick={() => { onSwitchTemplate(key); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center justify-between text-neutral-200"
-                  >
-                    <div>
-                      <div className="font-medium text-white">{t.name}</div>
-                      <div className="text-[10px] text-neutral-400 truncate">{t.description}</div>
-                    </div>
-                    {activeTemplate === key && <Check size={14} className="text-cyan-400 shrink-0 ml-2" />}
-                  </button>
-                ))}
-              </div>
-            )}
+              <option value="python">Python 3.12 (.py)</option>
+              <option value="javascript">JavaScript (.js)</option>
+              <option value="java">Java 21 (.java)</option>
+              <option value="cpp">C++20 (.cpp)</option>
+              <option value="c">C17 (.c)</option>
+              <option value="sql">SQL (MySQL) (.sql)</option>
+            </select>
           </div>
 
-          {/* Tools Menu (MAANG Engineering Suite) */}
-          <div className="relative">
-            <button
-              onClick={() => setOpenMenu(openMenu === 'tools' ? null : 'tools')}
-              className={`px-2.5 py-1 rounded hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-1 ${
-                openMenu === 'tools' ? 'bg-neutral-800 text-white' : ''
-              }`}
-            >
-              Tools <ChevronDown size={12} className="opacity-60" />
-            </button>
-            {openMenu === 'tools' && (
-              <div className="absolute top-full left-0 mt-1 w-56 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl py-1 z-50 text-xs">
-                <div className="px-3 py-1 text-[11px] font-medium text-neutral-400">Developer Utilities</div>
-                {onFormatDocument && (
-                  <button
-                    onClick={() => { onFormatDocument(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center justify-between text-neutral-200"
-                  >
-                    <span className="flex items-center gap-2">
-                      <AlignLeft size={14} className="text-cyan-400" /> Format Document
-                    </span>
-                    <span className="text-[10px] text-neutral-400 font-mono">Alt+Shift+F</span>
-                  </button>
-                )}
-                {onOpenTestRunner && (
-                  <button
-                    onClick={() => { onOpenTestRunner(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                  >
-                    <ShieldCheck size={14} className="text-emerald-400" /> Test Suite Runner
-                  </button>
-                )}
-                {onOpenProfiler && (
-                  <button
-                    onClick={() => { onOpenProfiler(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                  >
-                    <Gauge size={14} className="text-amber-400" /> Performance Profiler
-                  </button>
-                )}
-                {onOpenRegexTester && (
-                  <button
-                    onClick={() => { onOpenRegexTester(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                  >
-                    <Binary size={14} className="text-sky-400" /> Regex Pattern Tester
-                  </button>
-                )}
-                {onOpenAstModal && (
-                  <button
-                    onClick={() => { onOpenAstModal(); setOpenMenu(null); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-neutral-700 flex items-center gap-2 text-neutral-200"
-                  >
-                    <Network size={14} className="text-indigo-400" /> Inspect AST Syntax Tree
-                  </button>
-                )}
-              </div>
-            )}
+          {/* File Statistics Badge */}
+          <div className="hidden lg:flex items-center gap-2 text-[11px] text-neutral-400 px-2 py-1 rounded bg-neutral-900/60 border border-neutral-850 font-mono">
+            <span>{lineCount} lines</span>
+            <span className="text-neutral-600">•</span>
+            <span>{charCount} chars</span>
+            <span className="text-neutral-600">•</span>
+            <span>{fileSizeKb} KB</span>
           </div>
-
-          <button
-            onClick={onTogglePreview}
-            className={`px-2.5 py-1 rounded hover:bg-neutral-800 transition-colors flex items-center gap-1.5 ${
-              showPreview ? 'text-cyan-400 bg-neutral-800/80 font-medium' : 'text-neutral-300'
-            }`}
-          >
-            <Eye size={13} /> {showPreview ? 'Hide Preview' : 'Live Preview'}
-          </button>
         </div>
       </div>
 
-      {/* Zone 3: Primary Actions */}
+      {/* Right: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Run Button */}
+        {/* Upload File Button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700/80 text-xs font-medium transition-all shadow-sm active:scale-95"
+          title="Upload code file from your device (.py, .js, .java, .cpp, .c, .sql)"
+        >
+          <Upload size={14} className="text-cyan-400" />
+          <span className="hidden sm:inline">Upload File</span>
+        </button>
+
+        {/* Download File Button */}
+        <button
+          onClick={onDownloadFile}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700/80 text-xs font-medium transition-all shadow-sm active:scale-95"
+          title="Download edited code file"
+        >
+          <Download size={14} className="text-emerald-400" />
+          <span className="hidden sm:inline">Download</span>
+        </button>
+
+        {/* Format Document Button */}
+        <button
+          onClick={onFormatCode}
+          className="p-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 text-xs font-medium transition-all"
+          title="Format Code (Alt + Shift + F)"
+        >
+          <Sparkles size={15} className="text-amber-400" />
+        </button>
+
+        {/* Starter Template Selector */}
+        <div className="relative group">
+          <button
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 text-xs font-medium transition-all"
+            title="Load starter template"
+          >
+            <FilePlus size={14} className="text-indigo-400" />
+            <span className="hidden md:inline">Templates</span>
+          </button>
+          <div className="absolute right-0 top-full mt-1 w-44 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl py-1 hidden group-hover:block z-50 text-xs">
+            <div className="px-3 py-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
+              Starter Boilerplates
+            </div>
+            <button
+              onClick={() => onNewTemplate('python')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>Python 3</span>
+              <span className="text-[10px] font-mono text-sky-400">.py</span>
+            </button>
+            <button
+              onClick={() => onNewTemplate('javascript')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>JavaScript</span>
+              <span className="text-[10px] font-mono text-yellow-400">.js</span>
+            </button>
+            <button
+              onClick={() => onNewTemplate('java')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>Java 21</span>
+              <span className="text-[10px] font-mono text-orange-400">.java</span>
+            </button>
+            <button
+              onClick={() => onNewTemplate('cpp')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>C++20</span>
+              <span className="text-[10px] font-mono text-purple-400">.cpp</span>
+            </button>
+            <button
+              onClick={() => onNewTemplate('c')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>C17</span>
+              <span className="text-[10px] font-mono text-cyan-400">.c</span>
+            </button>
+            <button
+              onClick={() => onNewTemplate('sql')}
+              className="w-full text-left px-3 py-1.5 hover:bg-neutral-800 text-neutral-200 flex items-center justify-between"
+            >
+              <span>MySQL</span>
+              <span className="text-[10px] font-mono text-emerald-400">.sql</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Run Code Button */}
         <button
           onClick={onRun}
           disabled={isRunning}
-          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-          title="Run project or current script (F5)"
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs shadow-md transition-all active:scale-95 ${
+            isRunning
+              ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40 hover:shadow-emerald-900/60'
+          }`}
+          title="Execute code (F5)"
         >
-          <Play size={13} className={isRunning ? 'animate-spin' : 'fill-white'} />
-          <span>{isRunning ? 'Running...' : 'Run'}</span>
+          {isRunning ? (
+            <>
+              <RefreshCw size={14} className="animate-spin text-emerald-300" />
+              <span>Running...</span>
+            </>
+          ) : (
+            <>
+              <Play size={14} className="fill-white" />
+              <span>Run Code</span>
+              <kbd className="hidden md:inline px-1 py-0.2 bg-emerald-700/60 rounded text-[10px] font-mono">
+                F5
+              </kbd>
+            </>
+          )}
         </button>
 
-        {/* Deploy to Vercel Button */}
-        {onOpenVercelDeploy && (
-          <button
-            onClick={onOpenVercelDeploy}
-            className="px-2.5 py-1.5 bg-neutral-950 hover:bg-neutral-800 border border-neutral-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-            title="Deploy project to Vercel"
-          >
-            <svg width="12" height="12" viewBox="0 0 1155 1000" fill="currentColor">
-              <path d="m577.3 0 577.4 1000H0z" />
-            </svg>
-            <span className="hidden sm:inline">Deploy</span>
-          </button>
-        )}
-
-        {/* Collaborate / Share Button */}
-        <button
-          onClick={onOpenShare}
-          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer relative"
-          title="Share workspace and collaborate"
-        >
-          <Share2 size={13} className="text-cyan-400" />
-          <span className="hidden md:inline">Collab</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span className="text-[10px] text-neutral-400 font-mono">({peerCount})</span>
-        </button>
-
-        {/* Quick Guide Tour */}
-        {onOpenGuide && (
-          <button
-            onClick={onOpenGuide}
-            className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
-            title="Quick Guide & Features"
-          >
-            <Sparkles size={15} className="text-amber-400" />
-          </button>
-        )}
-
-        {/* Keyboard Shortcuts */}
-        {onOpenShortcuts && (
+        {/* Settings & Shortcuts */}
+        <div className="flex items-center border-l border-neutral-800 pl-1.5 gap-1">
           <button
             onClick={onOpenShortcuts}
-            className="hidden sm:flex p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
-            title="Keyboard Shortcuts (?)"
+            className="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+            title="Keyboard Shortcuts"
           >
-            <Keyboard size={15} />
+            <Keyboard size={16} />
           </button>
-        )}
-
-        {/* Settings Button */}
-        <button
-          onClick={onOpenSettings}
-          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
-          title="IDE Settings"
-        >
-          <Settings size={15} />
-        </button>
+          <button
+            onClick={onOpenSettings}
+            className="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+            title="Editor Settings"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
       </div>
     </header>
   );
