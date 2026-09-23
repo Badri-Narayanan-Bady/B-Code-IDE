@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Plus Jakarta Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    user-select: none;
+    background-color: #0d1117;
+    color: #e6edf3;
+  }
+
+  code, pre, kbd, samp {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Custom sleek scrollbar for IDE panels */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Wavy squiggly underlines for diagnostics */
+.diagnostic-error {
+  text-decoration: underline wavy #f85149 2px;
+  text-underline-offset: 3px;
+}
+.diagnostic-warning {
+  text-decoration: underline wavy #d29922 2px;
+  text-underline-offset: 3px;
+}
+.diagnostic-info {
+  text-decoration: underline wavy #58a6ff 2px;
+  text-underline-offset: 3px;
+}
+
+/* Syntax token colors for the custom high-performance code editor */
+.tok-keyword { color: #ff7b72; font-weight: 600; }
+.tok-fn { color: #d2a8ff; }
+.tok-string { color: #a5d6ff; }
+.tok-number { color: #79c0ff; }
+.tok-comment { color: #8b949e; font-style: italic; }
+.tok-tag { color: #7ee787; }
+.tok-attr { color: #79c0ff; }
+.tok-type { color: #ffa657; }
+.tok-punct { color: #c9d1d9; }
+.tok-operator { color: #ff7b72; }
+.tok-variable { color: #e6edf3; }
+.tok-boolean { color: #ff7b72; font-weight: 600; }
+.tok-regex { color: #7ee787; }
+
+/* Code editor line highlight */
+.active-line-bg {
+  background-color: rgba(110, 118, 129, 0.1);
+}
+
