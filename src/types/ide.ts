@@ -65,3 +65,67 @@ export interface ToastMessage {
   message: string;
   title?: string;
 }
+
+export type RiskLevel = 'low' | 'moderate' | 'high' | 'critical';
+
+export interface FunctionComplexity {
+  name: string;
+  startLine: number;
+  endLine: number;
+  loc: number;
+  cyclomaticComplexity: number;
+  cognitiveComplexity: number;
+  risk: RiskLevel;
+  parameterCount: number;
+  suggestion?: string;
+}
+
+export interface ComplexityBreakdown {
+  branches: number;      // if, else if, elif, switch/case
+  loops: number;         // for, while, do-while
+  logicalOps: number;    // &&, ||, and, or
+  ternaryOps: number;    // ? :
+  exceptions: number;    // catch, except
+  sqlClauses: number;    // WHERE, HAVING, JOIN, etc.
+}
+
+export interface LatencyBreakdown {
+  cpuCyclesNs: number;
+  memoryAccessNs: number;
+  ioLatencyNs: number;
+}
+
+export interface ExecutionTimeEstimate {
+  asymptoticNotation: string;      // e.g. O(1), O(N), O(N^2), O(N log N)
+  asymptoticLabel: string;         // Linear, Quadratic, Constant, etc.
+  estimatedDurationMs: number;     // Estimated runtime for standard N (e.g. N = 10,000)
+  durationRange: string;           // "< 1 ms", "2-8 ms", etc.
+  category: 'instant' | 'fast' | 'moderate' | 'slow';
+  maxLoopDepth: number;
+  recursiveCallsDetected: boolean;
+  estimatedOpsSmall: string;       // e.g. "~100 ops (N=100)"
+  estimatedOpsMedium: string;      // e.g. "~10,000 ops (N=10k)"
+  estimatedOpsLarge: string;       // e.g. "~100M ops (N=100k)"
+  latencyBreakdown: LatencyBreakdown;
+  sqlProfile?: {
+    tableScans: number;
+    joins: number;
+    sortOperations: number;
+  };
+}
+
+export interface CodeAnalysisResult {
+  totalCyclomaticComplexity: number;
+  risk: RiskLevel;
+  cognitiveComplexity: number;
+  maintainabilityIndex: number;    // 0 - 100
+  maintainabilityLabel: 'High' | 'Moderate' | 'Low';
+  halsteadVolume: number;
+  linesOfCode: number;
+  commentLines: number;
+  blankLines: number;
+  breakdown: ComplexityBreakdown;
+  functions: FunctionComplexity[];
+  executionEstimate: ExecutionTimeEstimate;
+  recommendations: string[];
+}

@@ -1,89 +1,208 @@
+export type TokenType =
+  | 'keyword-control'
+  | 'keyword-decl'
+  | 'fn-decl'
+  | 'fn-call'
+  | 'builtin-fn'
+  | 'type'
+  | 'decorator'
+  | 'string'
+  | 'number'
+  | 'comment'
+  | 'boolean'
+  | 'variable'
+  | 'property'
+  | 'operator'
+  | 'punct'
+  | 'sql-clause'
+  | 'sql-fn'
+  | 'plain';
+
 export interface Token {
-  type: 'keyword' | 'fn' | 'string' | 'number' | 'comment' | 'tag' | 'type' | 'punct' | 'operator' | 'variable' | 'boolean' | 'plain';
+  type: TokenType;
   text: string;
 }
 
-const JS_KEYWORDS = new Set([
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  'async', 'await', 'from', 'as', 'let', 'static', 'interface', 'type', 'enum',
-  'implements', 'public', 'private', 'protected', 'readonly'
+export interface CodeSymbol {
+  name: string;
+  kind: 'function' | 'class' | 'method' | 'table';
+  line: number; // 1-indexed
+  signature: string;
+}
+
+// Control flow keywords: VS Code Purple (#C586C0)
+const JS_CONTROL_KEYWORDS = new Set([
+  'break', 'case', 'catch', 'continue', 'debugger', 'default', 'do', 'else',
+  'finally', 'for', 'if', 'return', 'switch', 'throw', 'try', 'while', 'with',
+  'yield', 'await'
 ]);
 
-const PYTHON_KEYWORDS = new Set([
-  'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif',
-  'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in',
-  'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try',
-  'while', 'with', 'yield', 'True', 'False', 'None'
+// Declaration / storage / structural keywords: VS Code Blue (#569CD6)
+const JS_DECL_KEYWORDS = new Set([
+  'class', 'const', 'delete', 'export', 'extends', 'function', 'import', 'in',
+  'instanceof', 'new', 'super', 'this', 'typeof', 'var', 'void', 'async',
+  'from', 'as', 'let', 'static', 'interface', 'type', 'enum', 'implements',
+  'public', 'private', 'protected', 'readonly', 'of'
 ]);
 
-const JAVA_KEYWORDS = new Set([
-  'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class',
-  'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final',
-  'finally', 'float', 'for', 'goto', 'if', 'implements', 'import', 'instanceof', 'int',
-  'interface', 'long', 'native', 'new', 'package', 'private', 'protected', 'public',
-  'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
-  'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'record', 'var'
+const JS_BUILTIN_FNS = new Set([
+  'console', 'log', 'warn', 'error', 'info', 'table', 'parseInt', 'parseFloat',
+  'isNaN', 'isFinite', 'encodeURI', 'decodeURI', 'setTimeout', 'setInterval',
+  'clearTimeout', 'clearInterval', 'fetch', 'Math', 'JSON', 'Object', 'Array',
+  'String', 'Number', 'Boolean', 'Map', 'Set', 'Promise', 'Date', 'RegExp',
+  'Symbol', 'Error', 'push', 'pop', 'shift', 'unshift', 'slice', 'splice',
+  'map', 'filter', 'reduce', 'forEach', 'find', 'includes', 'indexOf', 'join'
 ]);
 
-const CPP_KEYWORDS = new Set([
+const PYTHON_CONTROL_KEYWORDS = new Set([
+  'break', 'continue', 'elif', 'else', 'except', 'finally', 'for', 'if',
+  'pass', 'raise', 'return', 'try', 'while', 'with', 'yield', 'match', 'case'
+]);
+
+const PYTHON_DECL_KEYWORDS = new Set([
+  'and', 'as', 'assert', 'class', 'def', 'del', 'from', 'global', 'import',
+  'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'async', 'await'
+]);
+
+const PYTHON_BUILTIN_FNS = new Set([
+  'print', 'len', 'range', 'input', 'int', 'str', 'float', 'list', 'dict',
+  'set', 'tuple', 'bool', 'type', 'sum', 'min', 'max', 'abs', 'round',
+  'enumerate', 'zip', 'sorted', 'reversed', 'map', 'filter', 'all', 'any',
+  'isinstance', 'issubclass', 'id', 'open', 'help', 'dir', 'vars', 'format',
+  'append', 'extend', 'insert', 'remove', 'pop', 'clear', 'index', 'count',
+  'keys', 'values', 'items', 'get', 'update', 'split', 'strip', 'replace'
+]);
+
+const JAVA_CONTROL_KEYWORDS = new Set([
+  'break', 'case', 'catch', 'continue', 'default', 'do', 'else', 'finally',
+  'for', 'goto', 'if', 'return', 'switch', 'synchronized', 'throw', 'throws',
+  'try', 'while', 'yield'
+]);
+
+const JAVA_DECL_KEYWORDS = new Set([
+  'abstract', 'assert', 'boolean', 'byte', 'char', 'class', 'const', 'double',
+  'enum', 'extends', 'final', 'float', 'implements', 'import', 'instanceof',
+  'int', 'interface', 'long', 'native', 'new', 'package', 'private', 'protected',
+  'public', 'short', 'static', 'strictfp', 'super', 'this', 'transient', 'void',
+  'volatile', 'record', 'var', 'sealed', 'permits', 'non-sealed'
+]);
+
+const JAVA_BUILTIN_FNS = new Set([
+  'System', 'out', 'in', 'err', 'println', 'print', 'printf', 'Scanner',
+  'String', 'Integer', 'Double', 'Boolean', 'Math', 'Arrays', 'Collections',
+  'List', 'ArrayList', 'Map', 'HashMap', 'Set', 'HashSet', 'StringBuilder',
+  'nextInt', 'nextLine', 'nextDouble', 'hasNext', 'length', 'charAt', 'substring',
+  'equals', 'hashCode', 'toString', 'add', 'get', 'set', 'remove', 'size'
+]);
+
+const CPP_CONTROL_KEYWORDS = new Set([
+  'break', 'case', 'catch', 'continue', 'default', 'do', 'else', 'for',
+  'goto', 'if', 'return', 'switch', 'throw', 'try', 'while', 'co_await',
+  'co_return', 'co_yield'
+]);
+
+const CPP_DECL_KEYWORDS = new Set([
   'alignas', 'alignof', 'and', 'and_eq', 'asm', 'atomic_cancel', 'atomic_commit',
-  'atomic_noexcept', 'auto', 'bitand', 'bitor', 'bool', 'break', 'case', 'catch',
-  'char', 'char8_t', 'char16_t', 'char32_t', 'class', 'compl', 'concept', 'const',
-  'consteval', 'constexpr', 'constinit', 'const_cast', 'continue', 'co_await',
-  'co_return', 'co_yield', 'decltype', 'default', 'delete', 'do', 'double',
-  'dynamic_cast', 'else', 'enum', 'explicit', 'export', 'extern', 'false', 'float',
-  'for', 'friend', 'goto', 'if', 'inline', 'int', 'long', 'mutable', 'namespace',
-  'new', 'noexcept', 'not', 'not_eq', 'nullptr', 'operator', 'or', 'or_eq',
-  'private', 'protected', 'public', 'reflexpr', 'register', 'reinterpret_cast',
-  'requires', 'return', 'short', 'signed', 'sizeof', 'static', 'static_assert',
-  'static_cast', 'struct', 'switch', 'template', 'this', 'thread_local', 'throw',
-  'true', 'try', 'typedef', 'typeid', 'typename', 'union', 'unsigned', 'using',
-  'virtual', 'void', 'volatile', 'wchar_t', 'while', 'xor', 'xor_eq', 'cout', 'cin', 'endl'
+  'atomic_noexcept', 'auto', 'bitand', 'bitor', 'bool', 'char', 'char8_t',
+  'char16_t', 'char32_t', 'class', 'compl', 'concept', 'const', 'consteval',
+  'constexpr', 'constinit', 'const_cast', 'decltype', 'delete', 'double',
+  'dynamic_cast', 'enum', 'explicit', 'export', 'extern', 'float', 'friend',
+  'inline', 'int', 'long', 'mutable', 'namespace', 'new', 'noexcept', 'not',
+  'not_eq', 'nullptr', 'operator', 'or', 'or_eq', 'private', 'protected',
+  'public', 'reflexpr', 'register', 'reinterpret_cast', 'requires', 'short',
+  'signed', 'sizeof', 'static', 'static_assert', 'static_cast', 'struct',
+  'template', 'this', 'thread_local', 'typedef', 'typeid', 'typename',
+  'union', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'wchar_t',
+  'xor', 'xor_eq'
 ]);
 
-const SQL_KEYWORDS = new Set([
-  'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
-  'CREATE', 'TABLE', 'DROP', 'ALTER', 'SHOW', 'TABLES', 'DESCRIBE', 'DESC',
-  'PRIMARY', 'KEY', 'INT', 'INTEGER', 'VARCHAR', 'DECIMAL', 'TEXT', 'DATETIME',
-  'DATE', 'TIME', 'TIMESTAMP', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL',
-  'ON', 'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'HAVING',
-  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'AND', 'OR', 'NOT', 'NULL', 'LIKE', 'IN',
-  'BETWEEN', 'EXISTS', 'AS', 'DISTINCT', 'UNION', 'ALL', 'CASE', 'WHEN', 'THEN',
-  'ELSE', 'END', 'DEFAULT', 'AUTO_INCREMENT', 'FOREIGN', 'REFERENCES', 'INDEX'
+const CPP_BUILTIN_FNS = new Set([
+  'std', 'cout', 'cin', 'endl', 'cerr', 'vector', 'string', 'map', 'set',
+  'pair', 'queue', 'stack', 'priority_queue', 'sort', 'min', 'max', 'swap',
+  'push_back', 'emplace_back', 'size', 'empty', 'begin', 'end', 'printf',
+  'scanf', 'malloc', 'free', 'strlen', 'strcpy', 'memcpy', 'memset', 'abs',
+  'sqrt', 'pow'
+]);
+
+const SQL_CLAUSES = new Set([
+  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS',
+  'ON', 'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'HAVING', 'LIMIT', 'OFFSET',
+  'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE',
+  'DROP', 'ALTER', 'SHOW', 'TABLES', 'DESCRIBE', 'DESC', 'PRIMARY', 'KEY',
+  'FOREIGN', 'REFERENCES', 'INDEX', 'UNION', 'ALL', 'AS', 'DISTINCT', 'AND',
+  'OR', 'NOT', 'NULL', 'LIKE', 'IN', 'BETWEEN', 'EXISTS', 'IS', 'CASE', 'WHEN',
+  'THEN', 'ELSE', 'END', 'DEFAULT', 'AUTO_INCREMENT'
+]);
+
+const SQL_TYPES = new Set([
+  'INT', 'INTEGER', 'VARCHAR', 'CHAR', 'TEXT', 'DECIMAL', 'NUMERIC', 'FLOAT',
+  'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'BOOLEAN', 'BLOB'
+]);
+
+const SQL_FUNCTIONS = new Set([
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NOW', 'CURDATE', 'CURTIME',
+  'DATEDIFF', 'CONCAT', 'ROUND', 'FLOOR', 'CEIL', 'ABS', 'UPPER', 'LOWER',
+  'LENGTH', 'SUBSTRING', 'TRIM', 'GROUP_CONCAT', 'IFNULL', 'DATE_FORMAT'
 ]);
 
 export function tokenizeLine(line: string, language: string = 'javascript'): Token[] {
   const tokens: Token[] = [];
   let i = 0;
   const len = line.length;
-
   const lang = language.toLowerCase();
+
+  // Helper to look ahead past whitespace
+  const getNextNonWhitespace = (startIdx: number): string => {
+    let p = startIdx;
+    while (p < len && (line[p] === ' ' || line[p] === '\t')) p++;
+    return p < len ? line[p] : '';
+  };
+
+  // Helper to get previous non-whitespace token
+  const getLastTokenType = (): TokenType | null => {
+    for (let k = tokens.length - 1; k >= 0; k--) {
+      if (tokens[k].text.trim() !== '') return tokens[k].type;
+    }
+    return null;
+  };
 
   while (i < len) {
     const char = line[i];
 
-    // Comments
-    // JS, Java, C, C++: //
+    // Single-line Comments
     if ((lang === 'javascript' || lang === 'java' || lang === 'cpp' || lang === 'c') && char === '/' && line[i + 1] === '/') {
       tokens.push({ type: 'comment', text: line.substring(i) });
       break;
     }
-    // Python: #
     if (lang === 'python' && char === '#') {
       tokens.push({ type: 'comment', text: line.substring(i) });
       break;
     }
-    // SQL: --
     if (lang === 'sql' && char === '-' && line[i + 1] === '-') {
       tokens.push({ type: 'comment', text: line.substring(i) });
       break;
     }
-    // C/C++ Preprocessor #include
-    if ((lang === 'cpp' || lang === 'c') && char === '#' && line.substring(i).startsWith('#include')) {
-      tokens.push({ type: 'keyword', text: line.substring(i) });
+
+    // Decorators / Annotations (@name in Python, Java, JS)
+    if (char === '@' && /[a-zA-Z_]/.test(line[i + 1] || '')) {
+      let dec = '@';
+      i++;
+      while (i < len && /[a-zA-Z0-9_.]/.test(line[i])) {
+        dec += line[i];
+        i++;
+      }
+      tokens.push({ type: 'decorator', text: dec });
+      continue;
+    }
+
+    // C/C++ Preprocessor Directives (#include, #define)
+    if ((lang === 'cpp' || lang === 'c') && char === '#' && line.substring(i).trimStart().startsWith('#')) {
+      let prep = '';
+      while (i < len) {
+        prep += line[i];
+        i++;
+      }
+      tokens.push({ type: 'keyword-decl', text: prep });
       break;
     }
 
@@ -119,7 +238,7 @@ export function tokenizeLine(line: string, language: string = 'javascript'): Tok
       continue;
     }
 
-    // Identifiers & Keywords
+    // Identifiers, Keywords, Functions, Types
     if (/[a-zA-Z_$]/.test(char)) {
       let word = '';
       while (i < len && /[a-zA-Z0-9_$]/.test(line[i])) {
@@ -127,30 +246,145 @@ export function tokenizeLine(line: string, language: string = 'javascript'): Tok
         i++;
       }
 
-      let isKeyword = false;
-      if (lang === 'javascript' && JS_KEYWORDS.has(word)) isKeyword = true;
-      else if (lang === 'python' && PYTHON_KEYWORDS.has(word)) isKeyword = true;
-      else if (lang === 'java' && JAVA_KEYWORDS.has(word)) isKeyword = true;
-      else if ((lang === 'cpp' || lang === 'c') && (CPP_KEYWORDS.has(word) || JAVA_KEYWORDS.has(word))) isKeyword = true;
-      else if (lang === 'sql' && SQL_KEYWORDS.has(word.toUpperCase())) isKeyword = true;
+      const nextChar = getNextNonWhitespace(i);
+      const isCall = nextChar === '(';
+      const lastToken = getLastTokenType();
+      const prevWasDecl = lastToken === 'keyword-decl' || lastToken === 'type';
 
-      if (isKeyword) {
-        tokens.push({ type: 'keyword', text: word });
-      } else if (word === 'true' || word === 'false' || word === 'null' || word === 'undefined') {
-        tokens.push({ type: 'boolean', text: word });
-      } else if (i < len && line[i] === '(') {
-        tokens.push({ type: 'fn', text: word });
-      } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(word)) {
-        tokens.push({ type: 'type', text: word });
-      } else {
-        tokens.push({ type: 'plain', text: word });
+      // 1. Python
+      if (lang === 'python') {
+        if (PYTHON_CONTROL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-control', text: word });
+        } else if (PYTHON_DECL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-decl', text: word });
+        } else if (word === 'True' || word === 'False' || word === 'None') {
+          tokens.push({ type: 'boolean', text: word });
+        } else if (PYTHON_BUILTIN_FNS.has(word)) {
+          tokens.push({ type: isCall ? 'builtin-fn' : 'variable', text: word });
+        } else if (prevWasDecl && (tokens.some(t => t.text === 'def') || isCall)) {
+          tokens.push({ type: 'fn-decl', text: word });
+        } else if (isCall) {
+          tokens.push({ type: 'fn-call', text: word });
+        } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(word)) {
+          tokens.push({ type: 'type', text: word });
+        } else if (tokens.length > 0 && tokens[tokens.length - 1].text === '.') {
+          tokens.push({ type: 'property', text: word });
+        } else {
+          tokens.push({ type: 'variable', text: word });
+        }
+        continue;
       }
+
+      // 2. JavaScript
+      if (lang === 'javascript') {
+        if (JS_CONTROL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-control', text: word });
+        } else if (JS_DECL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-decl', text: word });
+        } else if (word === 'true' || word === 'false' || word === 'null' || word === 'undefined' || word === 'NaN') {
+          tokens.push({ type: 'boolean', text: word });
+        } else if (JS_BUILTIN_FNS.has(word)) {
+          tokens.push({ type: isCall ? 'builtin-fn' : 'type', text: word });
+        } else if (prevWasDecl && (tokens.some(t => t.text === 'function') || isCall)) {
+          tokens.push({ type: 'fn-decl', text: word });
+        } else if (isCall) {
+          tokens.push({ type: 'fn-call', text: word });
+        } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(word)) {
+          tokens.push({ type: 'type', text: word });
+        } else if (tokens.length > 0 && tokens[tokens.length - 1].text === '.') {
+          tokens.push({ type: 'property', text: word });
+        } else {
+          tokens.push({ type: 'variable', text: word });
+        }
+        continue;
+      }
+
+      // 3. Java
+      if (lang === 'java') {
+        if (JAVA_CONTROL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-control', text: word });
+        } else if (JAVA_DECL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-decl', text: word });
+        } else if (word === 'true' || word === 'false' || word === 'null') {
+          tokens.push({ type: 'boolean', text: word });
+        } else if (JAVA_BUILTIN_FNS.has(word)) {
+          tokens.push({ type: isCall ? 'builtin-fn' : 'type', text: word });
+        } else if (isCall) {
+          tokens.push({ type: 'fn-call', text: word });
+        } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(word)) {
+          tokens.push({ type: 'type', text: word });
+        } else if (tokens.length > 0 && tokens[tokens.length - 1].text === '.') {
+          tokens.push({ type: 'property', text: word });
+        } else {
+          tokens.push({ type: 'variable', text: word });
+        }
+        continue;
+      }
+
+      // 4. C & C++
+      if (lang === 'cpp' || lang === 'c') {
+        if (CPP_CONTROL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-control', text: word });
+        } else if (CPP_DECL_KEYWORDS.has(word)) {
+          tokens.push({ type: 'keyword-decl', text: word });
+        } else if (word === 'true' || word === 'false' || word === 'NULL' || word === 'nullptr') {
+          tokens.push({ type: 'boolean', text: word });
+        } else if (CPP_BUILTIN_FNS.has(word)) {
+          tokens.push({ type: isCall ? 'builtin-fn' : 'variable', text: word });
+        } else if (isCall) {
+          tokens.push({ type: 'fn-call', text: word });
+        } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(word)) {
+          tokens.push({ type: 'type', text: word });
+        } else {
+          tokens.push({ type: 'variable', text: word });
+        }
+        continue;
+      }
+
+      // 5. SQL (MySQL)
+      if (lang === 'sql') {
+        const upper = word.toUpperCase();
+        if (SQL_FUNCTIONS.has(upper)) {
+          tokens.push({ type: 'sql-fn', text: word });
+        } else if (SQL_CLAUSES.has(upper)) {
+          tokens.push({ type: 'sql-clause', text: word });
+        } else if (SQL_TYPES.has(upper)) {
+          tokens.push({ type: 'type', text: word });
+        } else if (upper === 'TRUE' || upper === 'FALSE' || upper === 'NULL') {
+          tokens.push({ type: 'boolean', text: word });
+        } else if (isCall) {
+          tokens.push({ type: 'sql-fn', text: word });
+        } else {
+          tokens.push({ type: 'variable', text: word });
+        }
+        continue;
+      }
+
+      tokens.push({ type: 'plain', text: word });
       continue;
     }
 
     // Punctuations and operators
     if (/[=+\-*/%&|^!<>?:;.,{}()[\]]/.test(char)) {
-      tokens.push({ type: 'punct', text: char });
+      // Check multi-character operators: ==, ===, !=, !==, <=, >=, &&, ||, ->, =>, ::
+      const two = line.substring(i, i + 2);
+      const three = line.substring(i, i + 3);
+      if (three === '===' || three === '!==') {
+        tokens.push({ type: 'operator', text: three });
+        i += 3;
+        continue;
+      }
+      if (['==', '!=', '<=', '>=', '&&', '||', '->', '=>', '::', '++', '--', '+=', '-=', '*=', '/='].includes(two)) {
+        tokens.push({ type: 'operator', text: two });
+        i += 2;
+        continue;
+      }
+
+      if (/[=+\-*/%&|^!<>?]/.test(char)) {
+        tokens.push({ type: 'operator', text: char });
+      } else {
+        tokens.push({ type: 'punct', text: char });
+      }
       i++;
       continue;
     }
@@ -162,3 +396,411 @@ export function tokenizeLine(line: string, language: string = 'javascript'): Tok
 
   return tokens;
 }
+
+// Maps token types to exact VS Code Dark+ color palette classes and hex colors
+export const TOKEN_COLOR_MAP: Record<TokenType, { color: string; label: string; twClass: string }> = {
+  'keyword-control': {
+    color: '#C586C0', // VS Code Purple
+    label: 'Control Keyword',
+    twClass: 'text-[#C586C0] font-medium',
+  },
+  'keyword-decl': {
+    color: '#569CD6', // VS Code Blue
+    label: 'Declaration Keyword',
+    twClass: 'text-[#569CD6] font-medium',
+  },
+  'fn-decl': {
+    color: '#DCDCAA', // VS Code Signature Gold
+    label: 'Function Definition',
+    twClass: 'text-[#DCDCAA] font-semibold',
+  },
+  'fn-call': {
+    color: '#DCDCAA', // VS Code Signature Gold
+    label: 'Function Call',
+    twClass: 'text-[#DCDCAA]',
+  },
+  'builtin-fn': {
+    color: '#4EC9B0', // Teal / Gold
+    label: 'Built-in Function',
+    twClass: 'text-[#4EC9B0] font-medium',
+  },
+  'type': {
+    color: '#4EC9B0', // VS Code Teal
+    label: 'Class / Type',
+    twClass: 'text-[#4EC9B0]',
+  },
+  'decorator': {
+    color: '#DCDCAA', // Gold
+    label: 'Decorator / Annotation',
+    twClass: 'text-[#DCDCAA] italic',
+  },
+  'string': {
+    color: '#CE9178', // VS Code Terracotta
+    label: 'String Literal',
+    twClass: 'text-[#CE9178]',
+  },
+  'number': {
+    color: '#B5CEA8', // VS Code Mint Green
+    label: 'Numeric Literal',
+    twClass: 'text-[#B5CEA8]',
+  },
+  'comment': {
+    color: '#6A9955', // VS Code Olive Green
+    label: 'Comment',
+    twClass: 'text-[#6A9955] italic',
+  },
+  'boolean': {
+    color: '#569CD6', // VS Code Blue
+    label: 'Boolean / Null',
+    twClass: 'text-[#569CD6]',
+  },
+  'variable': {
+    color: '#9CDCFE', // VS Code Sky Blue
+    label: 'Identifier / Variable',
+    twClass: 'text-[#9CDCFE]',
+  },
+  'property': {
+    color: '#9CDCFE', // VS Code Light Blue
+    label: 'Object Property',
+    twClass: 'text-[#9CDCFE]',
+  },
+  'operator': {
+    color: '#D4D4D4', // Crisp Gray
+    label: 'Operator',
+    twClass: 'text-[#D4D4D4]',
+  },
+  'punct': {
+    color: '#808080', // Delimiter Gray
+    label: 'Punctuation',
+    twClass: 'text-neutral-400',
+  },
+  'sql-clause': {
+    color: '#569CD6', // SQL Keyword Blue
+    label: 'SQL Clause',
+    twClass: 'text-[#569CD6] font-bold tracking-wide',
+  },
+  'sql-fn': {
+    color: '#DCDCAA', // SQL Function Gold
+    label: 'SQL Aggregate Function',
+    twClass: 'text-[#DCDCAA] font-semibold',
+  },
+  'plain': {
+    color: '#D4D4D4',
+    label: 'Text',
+    twClass: 'text-[#D4D4D4]',
+  },
+};
+
+/**
+ * Extracts top-level and class-level functions/methods and classes from code
+ * for the VS Code Breadcrumbs and Quick Symbol Picker.
+ */
+export function extractCodeSymbols(code: string, language: string): CodeSymbol[] {
+  const symbols: CodeSymbol[] = [];
+  const lines = code.split('\n');
+  const lang = language.toLowerCase();
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('--')) {
+      continue;
+    }
+
+    const lineNum = i + 1;
+
+    // Python
+    if (lang === 'python') {
+      const fnMatch = trimmed.match(/^def\s+([a-zA-Z0-9_]+)\s*\((.*?)\):/);
+      if (fnMatch) {
+        symbols.push({
+          name: fnMatch[1],
+          kind: rawLine.startsWith(' ') || rawLine.startsWith('\t') ? 'method' : 'function',
+          line: lineNum,
+          signature: `def ${fnMatch[1]}(${fnMatch[2]})`,
+        });
+        continue;
+      }
+      const classMatch = trimmed.match(/^class\s+([a-zA-Z0-9_]+)(?:\((.*?)\))?:/);
+      if (classMatch) {
+        symbols.push({
+          name: classMatch[1],
+          kind: 'class',
+          line: lineNum,
+          signature: `class ${classMatch[1]}`,
+        });
+        continue;
+      }
+    }
+
+    // JavaScript
+    if (lang === 'javascript') {
+      const fnMatch = trimmed.match(/^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_]+)\s*\((.*?)\)/);
+      if (fnMatch) {
+        symbols.push({
+          name: fnMatch[1],
+          kind: 'function',
+          line: lineNum,
+          signature: `function ${fnMatch[1]}(${fnMatch[2]})`,
+        });
+        continue;
+      }
+      const arrowMatch = trimmed.match(/^(?:const|let|var)\s+([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?\((.*?)\)\s*=>/);
+      if (arrowMatch) {
+        symbols.push({
+          name: arrowMatch[1],
+          kind: 'function',
+          line: lineNum,
+          signature: `const ${arrowMatch[1]} = (${arrowMatch[2]}) =>`,
+        });
+        continue;
+      }
+      const classMatch = trimmed.match(/^(?:export\s+)?class\s+([a-zA-Z0-9_]+)/);
+      if (classMatch) {
+        symbols.push({
+          name: classMatch[1],
+          kind: 'class',
+          line: lineNum,
+          signature: `class ${classMatch[1]}`,
+        });
+        continue;
+      }
+    }
+
+    // Java, C, C++
+    if (lang === 'java' || lang === 'cpp' || lang === 'c') {
+      const classMatch = trimmed.match(/^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?class\s+([a-zA-Z0-9_]+)/);
+      if (classMatch) {
+        symbols.push({
+          name: classMatch[1],
+          kind: 'class',
+          line: lineNum,
+          signature: `class ${classMatch[1]}`,
+        });
+        continue;
+      }
+
+      // Method / Function
+      const methodMatch = trimmed.match(/^(?:public\s+|private\s+|protected\s+|static\s+|virtual\s+|inline\s+)*([a-zA-Z0-9_<>[\]]+)\s+([a-zA-Z0-9_]+)\s*\((.*?)\)\s*(?:const)?\s*\{?/);
+      if (methodMatch && !['if', 'for', 'while', 'switch', 'catch'].includes(methodMatch[2])) {
+        symbols.push({
+          name: methodMatch[2],
+          kind: 'function',
+          line: lineNum,
+          signature: `${methodMatch[1]} ${methodMatch[2]}(${methodMatch[3]})`,
+        });
+        continue;
+      }
+    }
+
+    // SQL
+    if (lang === 'sql') {
+      const tableMatch = trimmed.match(/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([a-zA-Z0-9_]+)`?/i);
+      if (tableMatch) {
+        symbols.push({
+          name: tableMatch[1],
+          kind: 'table',
+          line: lineNum,
+          signature: `TABLE ${tableMatch[1]}`,
+        });
+        continue;
+      }
+    }
+  }
+
+  return symbols;
+}
+
+/**
+ * Finds the nearest enclosing function or class symbol for the current cursor line
+ */
+export function getActiveSymbolForLine(symbols: CodeSymbol[], currentLine: number): CodeSymbol | null {
+  if (symbols.length === 0) return null;
+  let active: CodeSymbol | null = null;
+  for (const sym of symbols) {
+    if (sym.line <= currentLine) {
+      active = sym;
+    } else {
+      break;
+    }
+  }
+  return active;
+}
+
+/**
+ * VS Code style hover quick doc lookup for keywords, builtins, and functions
+ */
+export interface HoverDocInfo {
+  title: string;
+  category: string;
+  signature?: string;
+  description: string;
+  returns?: string;
+}
+
+export const HOVER_DOCS: Record<string, HoverDocInfo> = {
+  // Python
+  'def': {
+    title: 'def',
+    category: 'Keyword (Function Definition)',
+    signature: 'def function_name(*args, **kwargs) -> ReturnType:',
+    description: 'Defines a callable function or method in Python.',
+  },
+  'class': {
+    title: 'class',
+    category: 'Keyword (Class Definition)',
+    signature: 'class ClassName(BaseClass):',
+    description: 'Defines a class to create user-defined objects and encapsulate state.',
+  },
+  'print': {
+    title: 'print',
+    category: 'Built-in Function',
+    signature: 'print(*objects, sep=" ", end="\\n", file=sys.stdout, flush=False)',
+    description: 'Prints values to a stream or to sys.stdout by default.',
+  },
+  'len': {
+    title: 'len',
+    category: 'Built-in Function',
+    signature: 'len(s) -> int',
+    description: 'Returns the number of items in a container (string, list, tuple, dict, etc.).',
+    returns: 'int',
+  },
+  'range': {
+    title: 'range',
+    category: 'Built-in Type / Generator',
+    signature: 'range(start, stop[, step])',
+    description: 'Generates an immutable sequence of numbers commonly used for looping a specific number of times in for loops.',
+  },
+  'return': {
+    title: 'return',
+    category: 'Control Flow Keyword',
+    signature: 'return [expression]',
+    description: 'Exits a function and optionally passes back an expression to the caller.',
+  },
+  'if': {
+    title: 'if',
+    category: 'Conditional Keyword',
+    signature: 'if condition:',
+    description: 'Executes a code block if the evaluated condition is true.',
+  },
+  'for': {
+    title: 'for',
+    category: 'Loop Keyword',
+    signature: 'for item in iterable:',
+    description: 'Iterates over elements of a sequence (such as list, string, or range).',
+  },
+  'while': {
+    title: 'while',
+    category: 'Loop Keyword',
+    signature: 'while condition:',
+    description: 'Repeatedly executes a target statement as long as a given condition is true.',
+  },
+  'import': {
+    title: 'import',
+    category: 'Module Keyword',
+    signature: 'import module_name [as alias]',
+    description: 'Loads external modules, libraries, or packages into the current namespace.',
+  },
+
+  // JavaScript
+  'function': {
+    title: 'function',
+    category: 'Keyword (Function Declaration)',
+    signature: 'function name(param1, param2) { ... }',
+    description: 'Declares a function with specified parameters and statement body.',
+  },
+  'const': {
+    title: 'const',
+    category: 'Declaration Keyword',
+    signature: 'const variableName = value;',
+    description: 'Declares block-scoped, immutable variable references.',
+  },
+  'let': {
+    title: 'let',
+    category: 'Declaration Keyword',
+    signature: 'let variableName = value;',
+    description: 'Declares re-assignable block-scoped local variables.',
+  },
+  'console': {
+    title: 'console',
+    category: 'Standard Object',
+    signature: 'console.log(...data: any[])',
+    description: 'Provides access to the browser/runtime debugging console.',
+  },
+  'async': {
+    title: 'async',
+    category: 'Keyword',
+    signature: 'async function foo() { ... }',
+    description: 'Marks a function as asynchronous, returning a Promise and allowing await expressions.',
+  },
+  'await': {
+    title: 'await',
+    category: 'Keyword',
+    signature: 'await promise;',
+    description: 'Pauses execution until an asynchronous Promise is settled (resolved or rejected).',
+  },
+
+  // Java / C++
+  'public': {
+    title: 'public',
+    category: 'Access Modifier',
+    signature: 'public <type> <name>',
+    description: 'Specifies that an element is accessible from any other class or package.',
+  },
+  'static': {
+    title: 'static',
+    category: 'Modifier Keyword',
+    signature: 'static <type> <name>',
+    description: 'Specifies that a method or member variable belongs to the type itself rather than an instance.',
+  },
+  'void': {
+    title: 'void',
+    category: 'Type Keyword',
+    signature: 'void functionName(...)',
+    description: 'Indicates that a function does not return a value.',
+  },
+  'cout': {
+    title: 'std::cout',
+    category: 'C++ Standard Stream',
+    signature: 'std::cout << val1 << val2;',
+    description: 'Standard output stream object for writing formatted text to console.',
+  },
+  'cin': {
+    title: 'std::cin',
+    category: 'C++ Standard Stream',
+    signature: 'std::cin >> variable;',
+    description: 'Standard input stream object for reading values from keyboard / stdin.',
+  },
+
+  // SQL
+  'SELECT': {
+    title: 'SELECT',
+    category: 'SQL Query Statement',
+    signature: 'SELECT col1, col2 FROM table [WHERE ...]',
+    description: 'Retrieves rows and columns from one or more relational database tables.',
+  },
+  'WHERE': {
+    title: 'WHERE',
+    category: 'SQL Predicate Clause',
+    signature: 'WHERE condition',
+    description: 'Filters records matching a boolean condition before grouping or returning.',
+  },
+  'JOIN': {
+    title: 'JOIN',
+    category: 'SQL Relational Clause',
+    signature: 'FROM tableA JOIN tableB ON tableA.id = tableB.a_id',
+    description: 'Combines columns from two or more tables based on a related common key.',
+  },
+  'COUNT': {
+    title: 'COUNT()',
+    category: 'SQL Aggregate Function',
+    signature: 'COUNT(expression | *)',
+    description: 'Returns the total number of rows matching the query criteria.',
+  },
+  'SUM': {
+    title: 'SUM()',
+    category: 'SQL Aggregate Function',
+    signature: 'SUM(column_name)',
+    description: 'Calculates the aggregate numerical sum of an expression across rows.',
+  },
+};

@@ -5,6 +5,7 @@ import { Terminal } from './components/Terminal';
 import { EmptyState } from './components/EmptyState';
 import { SettingsModal } from './components/SettingsModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+import { CodeAnalyzerModal } from './components/CodeAnalyzerModal';
 import { ToastContainer } from './components/Toast';
 import {
   CodeFile,
@@ -16,6 +17,7 @@ import {
 import { LANGUAGES, detectLanguage, getDefaultExtension } from './utils/languages';
 import { executeCode } from './utils/engine';
 import { formatCode } from './utils/formatter';
+import { analyzeCode } from './utils/analyzer';
 
 const STORAGE_FILE_KEY = 'b_code_active_file_v3';
 const STORAGE_SETTINGS_KEY = 'b_code_settings_v3';
@@ -96,7 +98,13 @@ export function App() {
   // 4. Modals and Toasts
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [isAnalyzerOpen, setIsAnalyzerOpen] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // 5. Static Code Analysis (Cyclomatic Complexity, Big-O, Estimated Execution Time)
+  const analysis = useMemo(() => {
+    return analyzeCode(file.content, file.language);
+  }, [file.content, file.language]);
 
   const addToast = useCallback(
     (type: 'success' | 'info' | 'warn' | 'error', message: string, title?: string) => {
@@ -291,10 +299,17 @@ export function App() {
         handleFormatCode();
         return;
       }
+      // Alt + A to toggle Static Code Analyzer
+      if (e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setIsAnalyzerOpen((prev) => !prev);
+        return;
+      }
       // Esc to close modals
       if (e.key === 'Escape') {
         setIsSettingsOpen(false);
         setIsShortcutsOpen(false);
+        setIsAnalyzerOpen(false);
       }
     };
 
@@ -318,6 +333,8 @@ export function App() {
         isRunning={isRunning}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        analysis={analysis}
+        onOpenAnalyzer={() => setIsAnalyzerOpen(true)}
       />
 
       {/* 2. Main Workspace Body: Single-File Editor + Terminal */}
@@ -339,6 +356,8 @@ export function App() {
             settings={settings}
             onRun={handleRun}
             onFormat={handleFormatCode}
+            analysis={analysis}
+            onOpenAnalyzer={() => setIsAnalyzerOpen(true)}
           />
         </div>
 
@@ -353,6 +372,8 @@ export function App() {
           onRun={handleRun}
           isExpanded={isTerminalExpanded}
           onToggleExpand={() => setIsTerminalExpanded(!isTerminalExpanded)}
+          analysis={analysis}
+          onOpenAnalyzerModal={() => setIsAnalyzerOpen(true)}
         />
       </main>
 
@@ -369,9 +390,18 @@ export function App() {
         onClose={() => setIsShortcutsOpen(false)}
       />
 
+      {/* Professional Static Code Analyzer Inspector Modal */}
+      <CodeAnalyzerModal
+        isOpen={isAnalyzerOpen}
+        onClose={() => setIsAnalyzerOpen(false)}
+        analysis={analysis}
+        fileName={file.name}
+        language={file.language}
+      />
+
       {/* 4. Global Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
-}
+};
 export default App;

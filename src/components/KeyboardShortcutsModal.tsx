@@ -17,6 +17,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     { key: 'Ctrl / Cmd + S', description: 'Download / Save code file' },
     { key: 'Ctrl / Cmd + F', description: 'Find & Replace in code' },
     { key: 'Alt + Shift + F', description: 'Format document' },
+    { key: 'Alt + A', description: 'Static Code Analyzer (Cyclomatic & Big-O)' },
     { key: 'Tab', description: 'Indent code (inserts spaces)' },
     { key: 'Esc', description: 'Close modals / find bar' },
   ];

@@ -11,9 +11,12 @@ import {
   RotateCcw,
   CheckCircle2,
   FilePlus,
-  Terminal as TerminalIcon
+  Terminal as TerminalIcon,
+  Activity,
+  GitBranch,
+  Clock
 } from 'lucide-react';
-import { SupportedLanguage, CodeFile } from '../types/ide';
+import { SupportedLanguage, CodeFile, CodeAnalysisResult } from '../types/ide';
 import { LANGUAGES } from '../utils/languages';
 
 interface TopBarProps {
@@ -30,6 +33,8 @@ interface TopBarProps {
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onToggleTerminal?: () => void;
+  analysis?: CodeAnalysisResult;
+  onOpenAnalyzer?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -46,6 +51,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenSettings,
   onOpenShortcuts,
   onToggleTerminal,
+  analysis,
+  onOpenAnalyzer,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentLangMeta = LANGUAGES[file.language] || LANGUAGES.python;
@@ -222,6 +229,34 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Code Static Analyzer Button */}
+        {onOpenAnalyzer && (
+          <button
+            onClick={onOpenAnalyzer}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-750 hover:border-cyan-500/50 text-xs font-medium text-neutral-200 transition-all shadow-sm active:scale-95 group"
+            title="Static Code Analysis: McCabe Cyclomatic Complexity & Estimated Execution Time"
+          >
+            <Activity size={14} className="text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span className="hidden sm:inline">Analyze</span>
+            {analysis && (
+              <span className="flex items-center gap-1 pl-1 ml-0.5 border-l border-neutral-750 font-mono text-[10px]">
+                <span className={`px-1 py-0.2 rounded font-bold ${
+                  analysis.risk === 'low'
+                    ? 'text-emerald-400 bg-emerald-950/70'
+                    : analysis.risk === 'moderate'
+                    ? 'text-amber-400 bg-amber-950/70'
+                    : 'text-rose-400 bg-rose-950/70'
+                }`}>
+                  M:{analysis.totalCyclomaticComplexity}
+                </span>
+                <span className="hidden md:inline text-neutral-400">
+                  {analysis.executionEstimate.asymptoticNotation}
+                </span>
+              </span>
+            )}
+          </button>
+        )}
 
         {/* Run Code Button */}
         <button

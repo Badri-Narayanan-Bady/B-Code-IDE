@@ -15,9 +15,15 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  Database
+  Database,
+  Activity,
+  Zap,
+  ShieldCheck,
+  GitBranch,
+  Cpu,
+  ExternalLink
 } from 'lucide-react';
-import { ExecutionResult, SupportedLanguage, SQLQueryResult } from '../types/ide';
+import { ExecutionResult, SupportedLanguage, SQLQueryResult, CodeAnalysisResult } from '../types/ide';
 
 interface TerminalProps {
   result: ExecutionResult | null;
@@ -29,6 +35,8 @@ interface TerminalProps {
   onRun: () => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  analysis?: CodeAnalysisResult;
+  onOpenAnalyzerModal?: () => void;
 }
 
 export const Terminal: React.FC<TerminalProps> = ({
@@ -41,8 +49,10 @@ export const Terminal: React.FC<TerminalProps> = ({
   onRun,
   isExpanded = false,
   onToggleExpand,
+  analysis,
+  onOpenAnalyzerModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'output' | 'sql' | 'stdin' | 'compiler'>(
+  const [activeTab, setActiveTab] = useState<'output' | 'sql' | 'stdin' | 'compiler' | 'analysis'>(
     language === 'sql' ? 'sql' : 'output'
   );
   const [copied, setCopied] = useState(false);
@@ -137,6 +147,31 @@ export const Terminal: React.FC<TerminalProps> = ({
           >
             <AlertCircle size={14} className="text-violet-400" />
             <span>Diagnostics</span>
+          </button>
+
+          {/* Static Code Analysis Tab */}
+          <button
+            onClick={() => setActiveTab('analysis')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTab === 'analysis'
+                ? 'bg-neutral-800 text-cyan-300 shadow-sm'
+                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
+            }`}
+            title="Cyclomatic Complexity, Big-O, and Estimated Execution Time"
+          >
+            <Activity size={14} className="text-cyan-400" />
+            <span>Analysis</span>
+            {analysis && (
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold border ${
+                analysis.risk === 'low'
+                  ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/50'
+                  : analysis.risk === 'moderate'
+                  ? 'bg-amber-950/80 text-amber-400 border-amber-800/50'
+                  : 'bg-rose-950/80 text-rose-400 border-rose-800/50'
+              }`}>
+                M={analysis.totalCyclomaticComplexity}
+              </span>
+            )}
           </button>
         </div>
 
@@ -350,6 +385,149 @@ export const Terminal: React.FC<TerminalProps> = ({
             ) : (
               <div className="text-neutral-500 py-4 text-center">
                 No compilation warnings or errors reported.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: STATIC CODE ANALYSIS & METRICS */}
+        {activeTab === 'analysis' && analysis && (
+          <div className="space-y-4">
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              {/* Cyclomatic Complexity */}
+              <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-lg">
+                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                  <span className="flex items-center gap-1">
+                    <GitBranch size={13} className="text-cyan-400" />
+                    Cyclomatic (M)
+                  </span>
+                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
+                    analysis.risk === 'low'
+                      ? 'text-emerald-400 bg-emerald-950/80 border border-emerald-800/40'
+                      : analysis.risk === 'moderate'
+                      ? 'text-amber-400 bg-amber-950/80 border border-amber-800/40'
+                      : 'text-rose-400 bg-rose-950/80 border border-rose-800/40'
+                  }`}>
+                    {analysis.risk}
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-white mt-1">
+                  {analysis.totalCyclomaticComplexity}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-0.5">
+                  {analysis.totalCyclomaticComplexity - 1} decision branches
+                </div>
+              </div>
+
+              {/* Estimated Execution Time */}
+              <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-lg">
+                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                  <span className="flex items-center gap-1">
+                    <Clock size={13} className="text-emerald-400" />
+                    Est. Runtime
+                  </span>
+                  <span className="font-mono text-emerald-400 font-semibold text-[11px]">
+                    {analysis.executionEstimate.asymptoticNotation}
+                  </span>
+                </div>
+                <div className="text-lg font-bold font-mono text-emerald-400 mt-1">
+                  {analysis.executionEstimate.durationRange}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-0.5 truncate">
+                  {analysis.executionEstimate.asymptoticLabel}
+                </div>
+              </div>
+
+              {/* Maintainability Index */}
+              <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-lg">
+                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                  <span className="flex items-center gap-1">
+                    <ShieldCheck size={13} className="text-indigo-400" />
+                    Maintainability
+                  </span>
+                  <span className="text-[10px] text-neutral-400 font-mono">
+                    {analysis.maintainabilityLabel}
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-white mt-1">
+                  {analysis.maintainabilityIndex}
+                  <span className="text-xs text-neutral-500 font-normal"> / 100</span>
+                </div>
+                <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+                  <div
+                    className={`h-full rounded-full ${
+                      analysis.maintainabilityIndex >= 85
+                        ? 'bg-emerald-500'
+                        : analysis.maintainabilityIndex >= 65
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${analysis.maintainabilityIndex}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Cognitive & Nesting */}
+              <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-lg">
+                <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                  <span className="flex items-center gap-1">
+                    <Zap size={13} className="text-amber-400" />
+                    Cognitive Load
+                  </span>
+                  <span className="text-[10px] text-neutral-500 font-mono">
+                    Depth {analysis.executionEstimate.maxLoopDepth}
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-white mt-1">
+                  {analysis.cognitiveComplexity}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-0.5">
+                  {analysis.executionEstimate.recursiveCallsDetected ? 'Recursive call chain' : 'Linear nesting'}
+                </div>
+              </div>
+            </div>
+
+            {/* Decision Points Breakdown Badges */}
+            <div className="p-3 bg-neutral-950 border border-neutral-800/80 rounded-lg flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-neutral-400 text-[11px]">Decision Points:</span>
+                <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-cyan-300">
+                  Branches: <strong className="text-white font-mono">{analysis.breakdown.branches}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-emerald-300">
+                  Loops: <strong className="text-white font-mono">{analysis.breakdown.loops}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-amber-300">
+                  Logical Ops: <strong className="text-white font-mono">{analysis.breakdown.logicalOps}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-purple-300">
+                  Ternary: <strong className="text-white font-mono">{analysis.breakdown.ternaryOps}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-rose-300">
+                  Exceptions: <strong className="text-white font-mono">{analysis.breakdown.exceptions}</strong>
+                </span>
+              </div>
+
+              {onOpenAnalyzerModal && (
+                <button
+                  onClick={onOpenAnalyzerModal}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-800/50 text-xs font-medium transition-colors"
+                >
+                  <span>Inspect Full Static Report</span>
+                  <ExternalLink size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Top Recommendation Preview */}
+            {analysis.recommendations.length > 0 && (
+              <div className="p-2.5 bg-neutral-900/60 border border-neutral-800 rounded-lg text-xs text-neutral-300 flex items-start gap-2">
+                <span className="text-amber-400 text-sm font-bold">💡</span>
+                <div className="leading-relaxed">
+                  <strong className="text-neutral-200">Analyzer Recommendation: </strong>
+                  {analysis.recommendations[0]}
+                </div>
               </div>
             )}
           </div>
