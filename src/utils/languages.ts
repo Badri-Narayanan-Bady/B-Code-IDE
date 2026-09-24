@@ -271,3 +271,22 @@ export function detectLanguage(fileName: string): SupportedLanguage {
 export function getDefaultExtension(lang: SupportedLanguage): string {
   return LANGUAGES[lang]?.extension || '.txt';
 }
+
+export function getDefaultComment(lang: SupportedLanguage): string {
+  switch (lang) {
+    case 'python':
+      return '# code here\n';
+    case 'javascript':
+      return '// code here\n';
+    case 'java':
+      return '// code here\n';
+    case 'cpp':
+      return '// code here\n';
+    case 'c':
+      return '// code here\n';
+    case 'sql':
+      return '-- code here\n';
+    default:
+      return '// code here\n';
+  }
+}

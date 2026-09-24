@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { TopBar } from './components/TopBar';
 import { Editor } from './components/Editor';
 import { Terminal } from './components/Terminal';
-import { EmptyState } from './components/EmptyState';
 import { SettingsModal } from './components/SettingsModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { CodeAnalyzerModal } from './components/CodeAnalyzerModal';
@@ -14,14 +13,36 @@ import {
   EditorSettings,
   ToastMessage,
 } from './types/ide';
-import { LANGUAGES, detectLanguage, getDefaultExtension } from './utils/languages';
+import { LANGUAGES, detectLanguage, getDefaultExtension, getDefaultComment } from './utils/languages';
 import { executeCode } from './utils/engine';
 import { formatCode } from './utils/formatter';
 import { analyzeCode } from './utils/analyzer';
 
-const STORAGE_FILE_KEY = 'b_code_active_file_v3';
+// Clear legacy persistent code from localStorage so user never has stale code from previous closures
+try {
+  localStorage.removeItem('b_code_active_file');
+  localStorage.removeItem('b_code_active_file_v2');
+  localStorage.removeItem('b_code_active_file_v3');
+  localStorage.removeItem('b_code_stdin');
+  localStorage.removeItem('b_code_stdin_v3');
+} catch {}
+
 const STORAGE_SETTINGS_KEY = 'b_code_settings_v3';
-const STORAGE_STDIN_KEY = 'b_code_stdin_v3';
+const SESSION_FILE_KEY = 'b_code_session_file_v4';
+const SESSION_STDIN_KEY = 'b_code_session_stdin_v4';
+
+export const createFreshFile = (lang: SupportedLanguage = 'python'): CodeFile => {
+  const meta = LANGUAGES[lang] || LANGUAGES.python;
+  const initialContent = getDefaultComment(lang);
+  return {
+    name: meta.defaultFileName,
+    content: initialContent,
+    language: lang,
+    size: new Blob([initialContent]).size,
+    lastModified: Date.now(),
+    isDirty: false,
+  };
+};
 
 const DEFAULT_SETTINGS: EditorSettings = {
   fontSize: 14,
@@ -33,7 +54,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
 };
 
 export function App() {
-  // 1. Settings State
+  // 1. Settings State (Persists user preferences like font size, tab size)
   const [settings, setSettings] = useState<EditorSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_SETTINGS_KEY);
@@ -50,36 +71,29 @@ export function App() {
   }, [settings]);
 
   // 2. Active Uploaded / Input Code File State
+  // Kept empty by default with "# code here" comment when landing on main page.
+  // Maintained in sessionStorage only for the open tab/window (discarded once tab/page is closed).
   const [file, setFile] = useState<CodeFile>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_FILE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
+      const sessionSaved = sessionStorage.getItem(SESSION_FILE_KEY);
+      if (sessionSaved) {
+        return JSON.parse(sessionSaved);
       }
     } catch {}
-    // Default starter file: Python
-    const defaultMeta = LANGUAGES.python;
-    return {
-      name: defaultMeta.defaultFileName,
-      content: defaultMeta.sampleCode,
-      language: 'python',
-      size: new Blob([defaultMeta.sampleCode]).size,
-      lastModified: Date.now(),
-      isDirty: false,
-    };
+    return createFreshFile('python');
   });
 
-  // Save active file changes to localStorage
+  // Keep in sessionStorage during the open session
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_FILE_KEY, JSON.stringify(file));
+      sessionStorage.setItem(SESSION_FILE_KEY, JSON.stringify(file));
     } catch {}
   }, [file]);
 
-  // 3. Stdin & Execution State
+  // 3. Stdin & Execution State (Scoped to current session)
   const [stdinInput, setStdinInput] = useState<string>(() => {
     try {
-      return localStorage.getItem(STORAGE_STDIN_KEY) || '';
+      return sessionStorage.getItem(SESSION_STDIN_KEY) || '';
     } catch {
       return '';
     }
@@ -87,7 +101,7 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_STDIN_KEY, stdinInput);
+      sessionStorage.setItem(SESSION_STDIN_KEY, stdinInput);
     } catch {}
   }, [stdinInput]);
 
@@ -101,7 +115,7 @@ export function App() {
   const [isAnalyzerOpen, setIsAnalyzerOpen] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // 5. Static Code Analysis (Cyclomatic Complexity, Big-O, Estimated Execution Time)
+  // 5. Static Code Analysis (McCabe Cyclomatic Complexity, Big-O, Execution Estimation)
   const analysis = useMemo(() => {
     return analyzeCode(file.content, file.language);
   }, [file.content, file.language]);
@@ -195,7 +209,7 @@ export function App() {
     }
   }, [file, settings.tabSize, addToast]);
 
-  // 8. Load Starter Template Handler
+  // 8. Load Starter Template / Reset Handler
   const handleNewTemplate = useCallback(
     (lang: SupportedLanguage) => {
       const meta = LANGUAGES[lang] || LANGUAGES.python;
@@ -213,6 +227,19 @@ export function App() {
     [addToast]
   );
 
+  const handleResetCode = useCallback(
+    (lang: SupportedLanguage = file.language) => {
+      const fresh = createFreshFile(lang);
+      setFile(fresh);
+      setExecutionResult(null);
+      try {
+        sessionStorage.setItem(SESSION_FILE_KEY, JSON.stringify(fresh));
+      } catch {}
+      addToast('info', `Reset editor to fresh ${LANGUAGES[lang].name} canvas`, 'Fresh Start');
+    },
+    [file.language, addToast]
+  );
+
   // 9. Update Active File Name & Language
   const handleUpdateFileName = (newName: string) => {
     const trimmed = newName.trim();
@@ -228,14 +255,24 @@ export function App() {
 
   const handleSelectLanguage = (newLang: SupportedLanguage) => {
     const meta = LANGUAGES[newLang];
-    // Rename extension if needed
     const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
     const updatedName = `${baseName}${meta.extension}`;
+
+    // If current file only contains a default comment or is empty, switch comment to match the selected language
+    const isDefaultComment =
+      !file.content.trim() ||
+      Object.keys(LANGUAGES).some(
+        (l) => file.content.trim() === getDefaultComment(l as SupportedLanguage).trim()
+      );
+
+    const newContent = isDefaultComment ? getDefaultComment(newLang) : file.content;
 
     setFile((prev) => ({
       ...prev,
       name: updatedName,
       language: newLang,
+      content: newContent,
+      size: new Blob([newContent]).size,
       isDirty: true,
     }));
     addToast('info', `Switched environment to ${meta.name}`, 'Language Updated');
@@ -260,7 +297,11 @@ export function App() {
       setExecutionResult(result);
 
       if (result.success) {
-        addToast('success', `Executed in ${result.executionTimeMs} ms`, `${LANGUAGES[file.language].name} Success`);
+        addToast(
+          'success',
+          `Executed in ${result.executionTimeMs} ms`,
+          `${LANGUAGES[file.language].name} Success`
+        );
       } else {
         addToast('warn', `Exited with error (${result.executionTimeMs} ms)`, 'Execution Notice');
       }
@@ -327,7 +368,7 @@ export function App() {
         onUploadFile={handleUploadFile}
         onDownloadFile={handleDownloadFile}
         onFormatCode={handleFormatCode}
-        onResetCode={() => handleNewTemplate(file.language)}
+        onResetCode={() => handleResetCode(file.language)}
         onNewTemplate={handleNewTemplate}
         onRun={handleRun}
         isRunning={isRunning}
@@ -403,5 +444,6 @@ export function App() {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
-};
+}
+
 export default App;
