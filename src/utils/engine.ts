@@ -74,11 +74,28 @@ function formatValue(v: any): string {
 
 /**
  * Ensures Skulpt runtime is loaded and ready.
- * Tries window.Sk, local vendor bundles, and CDN fallback.
+ * Tries globalThis.Sk, dynamic import('skulpt'), local vendor bundles, and CDN fallback.
  */
 async function getSkulptInstance(): Promise<any> {
-  if (typeof (window as any).Sk !== 'undefined' && (window as any).Sk.importMainWithBody) {
-    return (window as any).Sk;
+  const g = typeof window !== 'undefined' ? (window as any) : (globalThis as any);
+  if (g.Sk && g.Sk.importMainWithBody) {
+    return g.Sk;
+  }
+
+  // If running in modular environment with installed skulpt package
+  try {
+    const skModule = await import('skulpt');
+    const Sk = (skModule as any).default || skModule;
+    if (Sk && Sk.importMainWithBody) {
+      if (typeof window !== 'undefined') {
+        (window as any).Sk = Sk;
+      }
+      return Sk;
+    }
+  } catch {}
+
+  if (typeof document === 'undefined') {
+    throw new Error('Skulpt runtime is only available in browser or supported module environment.');
   }
 
   return new Promise((resolve, reject) => {

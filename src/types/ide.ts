@@ -39,6 +39,8 @@ export interface ExecutionResult {
   sqlResults?: SQLQueryResult[];
   compilerOutput?: string;
   statusText?: string;
+  errorCategory?: 'Syntax Error' | 'Runtime Exception' | 'Linker / Compilation Error' | 'Internal Error';
+  diagnostics?: Diagnostic[];
 }
 
 export interface Diagnostic {
