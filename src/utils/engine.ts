@@ -69,245 +69,216 @@ function formatValue(v: any): string {
 }
 
 // =============================================================
-// 1. PYTHON ENGINE & STRICT INDENTATION / SYNTAX VALIDATOR
+// 1. PYTHON ENGINE: TWO-PHASE ARCHITECTURE & ERROR TAXONOMY
 // =============================================================
 
-interface PythonSyntaxAudit {
-  valid: boolean;
-  error?: {
-    type: 'IndentationError' | 'SyntaxError' | 'TabError';
-    message: string;
-    line: number;
-    column: number;
-    sourceLine: string;
-  };
+/**
+ * Ensures Skulpt runtime is loaded and ready.
+ * Tries window.Sk, local vendor bundles, and CDN fallback.
+ */
+async function getSkulptInstance(): Promise<any> {
+  if (typeof (window as any).Sk !== 'undefined' && (window as any).Sk.importMainWithBody) {
+    return (window as any).Sk;
+  }
+
+  return new Promise((resolve, reject) => {
+    const loadScript = (src: string): Promise<void> => {
+      return new Promise((res, rej) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+          res();
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => res();
+        s.onerror = () => rej(new Error(`Failed to load ${src}`));
+        document.head.appendChild(s);
+      });
+    };
+
+    loadScript('/vendor/skulpt.min.js')
+      .then(() => loadScript('/vendor/skulpt-stdlib.js'))
+      .then(() => {
+        if (typeof (window as any).Sk !== 'undefined') {
+          resolve((window as any).Sk);
+        } else {
+          throw new Error('Skulpt not defined after script load');
+        }
+      })
+      .catch(() => {
+        // Fallback to CDN
+        loadScript('https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js')
+          .then(() => loadScript('https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js'))
+          .then(() => {
+            if (typeof (window as any).Sk !== 'undefined') {
+              resolve((window as any).Sk);
+            } else {
+              reject(new Error('Failed to initialize Python runtime.'));
+            }
+          })
+          .catch((err) => reject(err));
+      });
+  });
 }
 
 /**
- * Strict Python 3 Indentation & Syntax Auditor.
- * Validates Python indentation stack, colons on block headers,
- * unexpected indents, unindent mismatches, and unbalanced tokens.
+ * Phase 1: Parsing & Compilation (Detection of Syntax / Indentation Errors)
+ * Formats syntax errors strictly according to Python 3 visual standards.
  */
-function auditPythonSyntax(code: string): PythonSyntaxAudit {
-  const rawLines = code.split('\n');
-  const indentStack: number[] = [0];
-  let expectIndentAfter: { line: number; keyword: string; sourceLine: string } | null = null;
+function formatPhase1SyntaxError(
+  code: string,
+  err: any
+): { formatted: string; type: string; line: number } {
+  const lines = code.split('\n');
+  const lineno = (err.traceback && err.traceback[0] && err.traceback[0].lineno) || 1;
+  const rawLine = lines[lineno - 1] ?? '';
+  const trimmed = rawLine.trim();
+  const rawMsg = err.toString();
 
-  let parenCount = 0;
-  let bracketCount = 0;
-  let braceCount = 0;
+  let errorType: 'SyntaxError' | 'IndentationError' | 'TabError' = 'SyntaxError';
+  let message = 'invalid syntax';
+  let col = 1;
 
-  for (let i = 0; i < rawLines.length; i++) {
-    const lineNum = i + 1;
-    const rawLine = rawLines[i];
-
-    // Check for mixed tabs and spaces on leading whitespace
-    const leadingWhitespaceMatch = rawLine.match(/^(\s*)/);
-    const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[1] : '';
-
-    // Convert tabs to 4 spaces for uniform indentation measurement
-    const normalizedLeading = leadingWhitespace.replace(/\t/g, '    ');
-    const currentIndent = normalizedLeading.length;
-
-    // Strip inline comments (#...) while avoiding '#' inside quotes
-    let stripped = '';
-    let inSingleQuote = false;
-    let inDoubleQuote = false;
-    let inTripleQuote: false | 'single' | 'double' = false;
-
-    for (let c = 0; c < rawLine.length; c++) {
-      const ch = rawLine[c];
-      const prev = c > 0 ? rawLine[c - 1] : '';
-      const next1 = c + 1 < rawLine.length ? rawLine[c + 1] : '';
-      const next2 = c + 2 < rawLine.length ? rawLine[c + 2] : '';
-
-      // Triple quotes
-      if (!inSingleQuote && !inDoubleQuote) {
-        if (ch === "'" && next1 === "'" && next2 === "'") {
-          inTripleQuote = inTripleQuote === 'single' ? false : 'single';
-          stripped += "'''";
-          c += 2;
-          continue;
-        }
-        if (ch === '"' && next1 === '"' && next2 === '"') {
-          inTripleQuote = inTripleQuote === 'double' ? false : 'double';
-          stripped += '"""';
-          c += 2;
-          continue;
-        }
+  // 1. TabError: mixed tabs and spaces
+  if (/^\s*\t\s*[^\s]/.test(rawLine) && /^\s* \s*[^\s]/.test(rawLine)) {
+    errorType = 'TabError';
+    message = 'inconsistent use of tabs and spaces in indentation';
+    col = 1;
+  }
+  // 2. IndentationError: unindent does not match outer level
+  else if (rawMsg.includes('unindent does not match')) {
+    errorType = 'IndentationError';
+    message = 'unindent does not match any outer indentation level';
+    const indentMatch = rawLine.match(/^(\s*)/);
+    col = (indentMatch ? indentMatch[1].length : 0) + 1;
+  }
+  // 3. IndentationError: expected an indented block after header statement
+  else {
+    let prevHeader: { lineNum: number; kw: string; indent: number } | null = null;
+    for (let p = lineno - 2; p >= 0; p--) {
+      const pRaw = lines[p];
+      const pTrimmed = pRaw.trim();
+      if (!pTrimmed || pTrimmed.startsWith('#')) continue;
+      const hMatch = pTrimmed.match(
+        /^(def|class|if|elif|else|for|while|try|except|finally|with|async\s+def|async\s+for|match|case)\b.*:$/
+      );
+      if (hMatch) {
+        const pIndent = (pRaw.match(/^(\s*)/) || ['', ''])[1].length;
+        prevHeader = { lineNum: p + 1, kw: hMatch[1], indent: pIndent };
       }
-
-      if (!inTripleQuote) {
-        if (ch === "'" && prev !== '\\' && !inDoubleQuote) inSingleQuote = !inSingleQuote;
-        if (ch === '"' && prev !== '\\' && !inSingleQuote) inDoubleQuote = !inDoubleQuote;
-      }
-
-      if (!inSingleQuote && !inDoubleQuote && !inTripleQuote) {
-        if (ch === '#') {
-          break; // Comment starts here
-        }
-        if (ch === '(') parenCount++;
-        if (ch === ')') parenCount--;
-        if (ch === '[') bracketCount++;
-        if (ch === ']') bracketCount--;
-        if (ch === '{') braceCount++;
-        if (ch === '}') braceCount--;
-      }
-
-      stripped += ch;
+      break;
     }
 
-    const trimmed = stripped.trim();
-
-    // Skip blank or comment-only lines
-    if (!trimmed) {
-      continue;
-    }
-
-    // Check 1: Check for expected indent following a block header (def, if, for, while, class, etc.)
-    if (expectIndentAfter !== null) {
-      const parentIndent = indentStack[indentStack.length - 1];
-      if (currentIndent <= parentIndent) {
-        return {
-          valid: false,
-          error: {
-            type: 'IndentationError',
-            message: `expected an indented block after '${expectIndentAfter.keyword}' statement on line ${expectIndentAfter.line}`,
-            line: lineNum,
-            column: currentIndent + 1,
-            sourceLine: rawLine,
-          },
-        };
-      } else {
-        indentStack.push(currentIndent);
-        expectIndentAfter = null;
-      }
-    } else {
-      // Check 2: Unexpected Indent (Indent increased without a preceding header)
-      const currentExpectedIndent = indentStack[indentStack.length - 1];
-      if (currentIndent > currentExpectedIndent) {
-        return {
-          valid: false,
-          error: {
-            type: 'IndentationError',
-            message: 'unexpected indent',
-            line: lineNum,
-            column: currentIndent + 1,
-            sourceLine: rawLine,
-          },
-        };
-      }
-
-      // Check 3: Unindent does not match any outer indentation level
-      if (currentIndent < currentExpectedIndent) {
-        while (indentStack.length > 0 && indentStack[indentStack.length - 1] > currentIndent) {
-          indentStack.pop();
-        }
-        if (indentStack[indentStack.length - 1] !== currentIndent) {
-          return {
-            valid: false,
-            error: {
-              type: 'IndentationError',
-              message: 'unindent does not match any outer indentation level',
-              line: lineNum,
-              column: currentIndent + 1,
-              sourceLine: rawLine,
-            },
-          };
-        }
-      }
-    }
-
-    // Check 4: Python 2 style print statements: `print "hello"` without parentheses
-    const py2Print = trimmed.match(/^print\s+([^(\s].*)$/);
-    if (py2Print) {
-      return {
-        valid: false,
-        error: {
-          type: 'SyntaxError',
-          message: `Missing parentheses in call to 'print'. Did you mean print(${py2Print[1]})?`,
-          line: lineNum,
-          column: rawLine.indexOf('print') + 6,
-          sourceLine: rawLine,
-        },
-      };
-    }
-
-    // Check 5: Block headers missing colon ':'
-    const headerKeywords = [
-      'def',
-      'async def',
-      'if',
-      'elif',
-      'else',
-      'for',
-      'async for',
-      'while',
-      'class',
-      'try',
-      'except',
-      'finally',
-      'with',
-      'async with',
-      'match',
-      'case',
-    ];
-
-    for (const kw of headerKeywords) {
-      const regex = new RegExp(`^${kw}(\\s+.*|:)$`);
-      if (regex.test(trimmed)) {
-        if (!trimmed.endsWith(':')) {
-          return {
-            valid: false,
-            error: {
-              type: 'SyntaxError',
-              message: "expected ':'",
-              line: lineNum,
-              column: rawLine.length + 1,
-              sourceLine: rawLine,
-            },
-          };
-        }
-        expectIndentAfter = {
-          line: lineNum,
-          keyword: kw,
-          sourceLine: rawLine,
-        };
+    const curIndent = (rawLine.match(/^(\s*)/) || ['', ''])[1].length;
+    if (prevHeader && curIndent <= prevHeader.indent) {
+      errorType = 'IndentationError';
+      message = `expected an indented block after '${prevHeader.kw}' statement on line ${prevHeader.lineNum}`;
+      col = curIndent + 1;
+    } else if (curIndent > 0 && lineno > 1 && !prevHeader) {
+      let prevNonEmptyIndent = 0;
+      let prevEndedWithColon = false;
+      for (let p = lineno - 2; p >= 0; p--) {
+        const pRaw = lines[p];
+        const pTrim = pRaw.trim();
+        if (!pTrim || pTrim.startsWith('#')) continue;
+        prevNonEmptyIndent = (pRaw.match(/^(\s*)/) || ['', ''])[1].length;
+        prevEndedWithColon = pTrim.endsWith(':');
         break;
       }
+      if (curIndent > prevNonEmptyIndent && !prevEndedWithColon) {
+        errorType = 'IndentationError';
+        message = 'unexpected indent';
+        col = curIndent + 1;
+      }
     }
   }
 
-  // Trailing header with missing body at end of file
-  if (expectIndentAfter !== null) {
-    return {
-      valid: false,
-      error: {
-        type: 'IndentationError',
-        message: `expected an indented block after '${expectIndentAfter.keyword}' statement on line ${expectIndentAfter.line}`,
-        line: rawLines.length,
-        column: 1,
-        sourceLine: expectIndentAfter.sourceLine,
-      },
-    };
+  // 4. Detailed SyntaxError identification
+  if (errorType === 'SyntaxError') {
+    const py2Print = trimmed.match(/^print\s+([^(\s].*)$/);
+    if (py2Print) {
+      message = `Missing parentheses in call to 'print'. Did you mean print(${py2Print[1]})?`;
+      col = rawLine.indexOf('print') + 6;
+    } else if (/^(if|elif|while)\s+[^=!<>]=[^=]/.test(trimmed)) {
+      message = "cannot assign to expression here. Maybe you meant '==' instead of '='?";
+      const eqIdx = rawLine.indexOf('=');
+      col = eqIdx !== -1 ? eqIdx + 1 : 1;
+    } else if (
+      /^(def|class|if|elif|else|for|while|try|except|finally|with|async\s+def|async\s+for)\b[^:]*$/.test(
+        trimmed
+      )
+    ) {
+      message = "expected ':'";
+      col = rawLine.length + 1;
+    }
   }
 
-  // Unbalanced brackets / parentheses
-  if (parenCount !== 0 || bracketCount !== 0 || braceCount !== 0) {
-    const missing = parenCount > 0 ? "parenthesis ')'" : bracketCount > 0 ? "bracket ']'" : "brace '}'";
-    return {
-      valid: false,
-      error: {
-        type: 'SyntaxError',
-        message: `unmatched or unclosed ${missing}`,
-        line: rawLines.length,
-        column: 1,
-        sourceLine: rawLines[rawLines.length - 1] || '',
-      },
-    };
+  const caretIndent = ' '.repeat(Math.max(0, col - 1));
+  const formatted =
+    `  File "main.py", line ${lineno}\n` +
+    `    ${trimmed}\n` +
+    `    ${caretIndent}^\n` +
+    `${errorType}: ${message}`;
+
+  return { formatted, type: errorType, line: lineno };
+}
+
+/**
+ * Phase 2: Runtime Execution (Exceptions & Call Stack Unwinding)
+ * Formats unhandled exceptions with full call stack tracebacks according to Python standards.
+ */
+function formatPhase2Traceback(
+  code: string,
+  err: any
+): { formatted: string; type: string } {
+  const lines = code.split('\n');
+  const rawMsg = err.toString();
+  const tpName = err.tp$name || 'Exception';
+
+  let cleanMsg = rawMsg;
+  cleanMsg = cleanMsg.replace(/\s+on\s+line\s+\d+$/, '');
+  const colonIdx = cleanMsg.indexOf(':');
+  if (colonIdx !== -1) {
+    cleanMsg = cleanMsg.slice(colonIdx + 1).trim();
   }
 
-  return { valid: true };
+  // Normalize exception classes according to Python 3 Taxonomy
+  let errType = tpName;
+  if (errType === 'ExternalError' && cleanMsg.includes('File not found')) {
+    errType = 'FileNotFoundError';
+    const match = cleanMsg.match(/File not found:\s*['"]?(.*?)['"]?$/);
+    const fname = match ? match[1] : 'file';
+    cleanMsg = `[Errno 2] No such file or directory: '${fname}'`;
+  } else if (errType === 'ImportError' && cleanMsg.startsWith('No module named')) {
+    errType = 'ModuleNotFoundError';
+  } else if (
+    cleanMsg.includes('Maximum call stack size exceeded') ||
+    cleanMsg.includes('maximum recursion depth')
+  ) {
+    errType = 'RecursionError';
+    cleanMsg = 'maximum recursion depth exceeded while calling a Python object';
+  } else if (cleanMsg.includes('integer division or modulo by zero')) {
+    cleanMsg = 'division by zero';
+  }
+
+  const frames: string[] = [];
+  if (err.traceback && err.traceback.length > 0) {
+    for (const f of err.traceback) {
+      const lineNo = f.lineno || 1;
+      const src = lines[lineNo - 1] ? lines[lineNo - 1].trim() : '';
+      const fnName =
+        !f.filename || f.filename === '<stdin>' || f.filename === '<stdin>.py'
+          ? '<module>'
+          : f.filename;
+      frames.push(`  File "main.py", line ${lineNo}, in ${fnName}\n    ${src}`);
+    }
+  } else {
+    frames.push(`  File "main.py", line 1, in <module>\n    ${(lines[0] || '').trim()}`);
+  }
+
+  const formatted = `Traceback (most recent call last):\n${frames.join('\n')}\n${errType}: ${cleanMsg}`;
+  return { formatted, type: errType };
 }
 
 async function executePython(
@@ -315,9 +286,6 @@ async function executePython(
   stdinInput: string,
   startTime: number
 ): Promise<ExecutionResult> {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-
   const nonCommentLines = code
     .split('\n')
     .map((l) => l.trim())
@@ -337,370 +305,103 @@ async function executePython(
     };
   }
 
-  // Step 1: Strict Indentation & Syntax Pre-Validation Audit
-  const audit = auditPythonSyntax(code);
-  if (!audit.valid && audit.error) {
+  let Sk: any;
+  try {
+    Sk = await getSkulptInstance();
+  } catch (initErr: any) {
     const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
-    const err = audit.error;
-    const colIndicator = ' '.repeat(Math.max(0, err.column - 1)) + '^';
-
-    stderr.push(
-      `  File "main.py", line ${err.line}\n` +
-        `    ${err.sourceLine.trim()}\n` +
-        `    ${colIndicator}\n` +
-        `${err.type}: ${err.message}`
-    );
-
     return {
       success: false,
       stdout: [],
-      stderr,
+      stderr: [`Error initializing Python runtime: ${initErr?.message || String(initErr)}`],
       executionTimeMs: elapsed,
       exitCode: 1,
-      compilerOutput: `python3 -m py_compile main.py\n${err.type}: ${err.message} at line ${err.line}`,
+      compilerOutput: `python3: Failed to load execution runtime.`,
     };
   }
 
-  // Step 2: Real Python 3 Execution via Skulpt (if available in window)
-  if (typeof (window as any).Sk !== 'undefined') {
-    return new Promise((resolve) => {
-      const skStdout: string[] = [];
-      const stdinLines = stdinInput.split('\n');
-      let stdinIdx = 0;
+  const stdout: string[] = [];
+  const stdinLines = stdinInput.split('\n');
+  let stdinIdx = 0;
 
-      const builtinRead = (file: string) => {
-        if (
-          (window as any).Sk.builtinFiles === undefined ||
-          (window as any).Sk.builtinFiles['files'][file] === undefined
-        ) {
-          throw new Error("File not found: '" + file + "'");
-        }
-        return (window as any).Sk.builtinFiles['files'][file];
-      };
-
-      (window as any).Sk.configure({
-        output: (text: string) => {
-          if (text === '\n') return;
-          skStdout.push(text.replace(/\n$/, ''));
-        },
-        read: builtinRead,
-        inputfun: () => {
-          return stdinLines[stdinIdx++] || '';
-        },
-        __future__: (window as any).Sk.python3,
-        retainPath: true,
-      });
-
-      const prog = (window as any).Sk.misceval.asyncToPromise(() => {
-        return (window as any).Sk.importMainWithBody('<stdin>', false, code, true);
-      });
-
-      prog.then(
-        () => {
-          const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
-          resolve({
-            success: true,
-            stdout: skStdout,
-            stderr: [],
-            executionTimeMs: elapsed,
-            exitCode: 0,
-            compilerOutput: `python3 main.py\nProcess finished with exit code 0.`,
-          });
-        },
-        (skErr: any) => {
-          const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
-          const errMsg = skErr.toString();
-          const cleanErr = errMsg.startsWith('Traceback')
-            ? errMsg
-            : `Traceback (most recent call last):\n  File "main.py", line ${
-                skErr.traceback?.[0]?.lineno || 1
-              }\n${errMsg}`;
-
-          resolve({
-            success: false,
-            stdout: skStdout,
-            stderr: [cleanErr],
-            executionTimeMs: elapsed,
-            exitCode: 1,
-            compilerOutput: `python3 main.py: Process terminated with exception`,
-          });
-        }
-      );
-    });
-  }
-
-  // Step 3: Fallback Transpiler Execution (if offline/skulpt not loaded)
-  try {
-    const lines = code.split('\n');
-    let jsCode = '';
-    const stdinLines = stdinInput.split('\n');
-    let stdinIndex = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      const indentMatch = rawLine.match(/^(\s*)/);
-      const indent = indentMatch ? indentMatch[1] : '';
-      const line = rawLine.trim();
-
-      if (!line || line.startsWith('#')) continue;
-
-      if (line.startsWith('print(') && line.endsWith(')')) {
-        const inner = line.slice(6, -1);
-        jsCode += `${indent}__print(${transformPythonExpr(inner)});\n`;
-        continue;
-      }
-
-      const defMatch = line.match(/^def\s+([a-zA-Z_]\w*)\s*\((.*?)\)\s*:/);
-      if (defMatch) {
-        jsCode += `${indent}function ${defMatch[1]}(${defMatch[2]}) {\n`;
-        continue;
-      }
-
-      const forRangeMatch = line.match(/^for\s+([a-zA-Z_]\w*)\s+in\s+range\((.*?)\)\s*:/);
-      if (forRangeMatch) {
-        const varName = forRangeMatch[1];
-        const args = forRangeMatch[2].split(',').map((s) => s.trim());
-        let start = '0';
-        let end = '0';
-        let step = '1';
-        if (args.length === 1) end = transformPythonExpr(args[0]);
-        else if (args.length === 2) {
-          start = transformPythonExpr(args[0]);
-          end = transformPythonExpr(args[1]);
-        } else if (args.length === 3) {
-          start = transformPythonExpr(args[0]);
-          end = transformPythonExpr(args[1]);
-          step = transformPythonExpr(args[2]);
-        }
-        jsCode += `${indent}for (let ${varName} = ${start}; ${varName} < ${end}; ${varName} += ${step}) {\n`;
-        continue;
-      }
-
-      const forInMatch = line.match(/^for\s+([a-zA-Z_]\w*)\s+in\s+(.*?)\s*:/);
-      if (forInMatch) {
-        jsCode += `${indent}for (const ${forInMatch[1]} of ${transformPythonExpr(forInMatch[2])}) {\n`;
-        continue;
-      }
-
-      const ifMatch = line.match(/^if\s+(.*?)\s*:/);
-      if (ifMatch) {
-        jsCode += `${indent}if (${transformPythonCondition(ifMatch[1])}) {\n`;
-        continue;
-      }
-      const elifMatch = line.match(/^elif\s+(.*?)\s*:/);
-      if (elifMatch) {
-        jsCode += `${indent}} else if (${transformPythonCondition(elifMatch[1])}) {\n`;
-        continue;
-      }
-      if (line === 'else:') {
-        jsCode += `${indent}} else {\n`;
-        continue;
-      }
-
-      const whileMatch = line.match(/^while\s+(.*?)\s*:/);
-      if (whileMatch) {
-        jsCode += `${indent}while (${transformPythonCondition(whileMatch[1])}) {\n`;
-        continue;
-      }
-
-      if (line.startsWith('return')) {
-        const val = line.slice(6).trim();
-        jsCode += `${indent}return ${transformPythonExpr(val)};\n`;
-        continue;
-      }
-
-      const transformed = transformPythonExpr(line);
-      if (transformed.includes('=')) {
-        const parts = transformed.split('=');
-        const lhs = parts[0].trim();
-        const rhs = parts.slice(1).join('=').trim();
-        if (!lhs.includes('.') && !lhs.includes('[')) {
-          jsCode += `${indent}var ${lhs} = ${rhs};\n`;
-        } else {
-          jsCode += `${indent}${lhs} = ${rhs};\n`;
-        }
-      } else {
-        jsCode += `${indent}${transformed};\n`;
-      }
+  const builtinRead = (file: string) => {
+    if (
+      Sk.builtinFiles === undefined ||
+      Sk.builtinFiles['files'][file] === undefined
+    ) {
+      throw new Error("File not found: '" + file + "'");
     }
+    return Sk.builtinFiles['files'][file];
+  };
 
-    const balancedCode = balancePythonIndents(lines, jsCode);
+  Sk.configure({
+    output: (text: string) => {
+      if (text === '\n') return;
+      stdout.push(text.replace(/\n$/, ''));
+    },
+    read: builtinRead,
+    inputfun: () => {
+      return stdinLines[stdinIdx++] || '';
+    },
+    __future__: Sk.python3,
+    retainPath: true,
+  });
 
-    const runtimeEnv = {
-      __print: (...args: any[]) => {
-        stdout.push(args.map(formatValue).join(' '));
-      },
-      __input: (prompt?: string) => {
-        if (prompt) stdout.push(prompt);
-        return stdinLines[stdinIndex++] || '';
-      },
-      math: Math,
-      range: (n: number) => Array.from({ length: n }, (_, i) => i),
-      len: (arr: any) => (arr ? arr.length : 0),
-      sum: (arr: number[]) => (Array.isArray(arr) ? arr.reduce((a, b) => a + b, 0) : 0),
-      min: (...args: any[]) => Math.min(...(Array.isArray(args[0]) ? args[0] : args)),
-      max: (...args: any[]) => Math.max(...(Array.isArray(args[0]) ? args[0] : args)),
-      abs: Math.abs,
-      round: Math.round,
-      int: (v: any) => parseInt(v, 10) || 0,
-      float: (v: any) => parseFloat(v) || 0,
-      str: (v: any) => String(v),
-      bool: (v: any) => Boolean(v),
-      list: (v: any) => (Array.isArray(v) ? [...v] : Array.from(v || [])),
-      dict: (v: any) => (typeof v === 'object' ? { ...v } : {}),
-      set: (v: any) => new Set(v || []),
-      tuple: (v: any) => Array.from(v || []),
-      enumerate: (arr: any[]) => (Array.isArray(arr) ? arr.map((item, idx) => [idx, item]) : []),
-      zip: (...arrs: any[][]) => {
-        const minLen = Math.min(...arrs.map((a) => a.length));
-        return Array.from({ length: minLen }, (_, i) => arrs.map((a) => a[i]));
-      },
-      reversed: (arr: any[]) => (Array.isArray(arr) ? [...arr].reverse() : []),
-      sorted: (arr: any[]) => (Array.isArray(arr) ? [...arr].sort((a, b) => (a > b ? 1 : -1)) : []),
-      any: (arr: any[]) => (Array.isArray(arr) ? arr.some(Boolean) : false),
-      all: (arr: any[]) => (Array.isArray(arr) ? arr.every(Boolean) : true),
-      type: (v: any) => `<class '${typeof v}'>`,
-      isinstance: (v: any, t: any) => typeof v === t || v instanceof t,
-      True: true,
-      False: false,
-      None: null,
+  // =========================================================================
+  // PHASE 1: PARSING & COMPILATION (Detection of Syntax / Indentation Errors)
+  // Python AST parser audits grammar before any execution begins.
+  // =========================================================================
+  try {
+    Sk.parse('<stdin>', code);
+  } catch (parseErr: any) {
+    const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
+    const { formatted, type, line } = formatPhase1SyntaxError(code, parseErr);
+
+    return {
+      success: false,
+      stdout: [], // Zero statements executed in Phase 1
+      stderr: [formatted],
+      executionTimeMs: elapsed,
+      exitCode: 1,
+      compilerOutput: `python3 -m py_compile main.py\nPhase 1 (Parsing & Compilation): Failed with ${type} at line ${line}`,
     };
+  }
 
-    const runner = new Function(
-      '__print',
-      'input',
-      'math',
-      'range',
-      'len',
-      'sum',
-      'min',
-      'max',
-      'abs',
-      'round',
-      'int',
-      'float',
-      'str',
-      'bool',
-      'list',
-      'dict',
-      'set',
-      'tuple',
-      'enumerate',
-      'zip',
-      'reversed',
-      'sorted',
-      'any',
-      'all',
-      'type',
-      'isinstance',
-      'True',
-      'False',
-      'None',
-      `
-      "use strict";
-      try {
-        ${balancedCode}
-      } catch(err) {
-        throw err;
-      }
-    `
-    );
-
-    runner(
-      runtimeEnv.__print,
-      runtimeEnv.__input,
-      runtimeEnv.math,
-      runtimeEnv.range,
-      runtimeEnv.len,
-      runtimeEnv.sum,
-      runtimeEnv.min,
-      runtimeEnv.max,
-      runtimeEnv.abs,
-      runtimeEnv.round,
-      runtimeEnv.int,
-      runtimeEnv.float,
-      runtimeEnv.str,
-      runtimeEnv.bool,
-      runtimeEnv.list,
-      runtimeEnv.dict,
-      runtimeEnv.set,
-      runtimeEnv.tuple,
-      runtimeEnv.enumerate,
-      runtimeEnv.zip,
-      runtimeEnv.reversed,
-      runtimeEnv.sorted,
-      runtimeEnv.any,
-      runtimeEnv.all,
-      runtimeEnv.type,
-      runtimeEnv.isinstance,
-      runtimeEnv.True,
-      runtimeEnv.False,
-      runtimeEnv.None
-    );
+  // =========================================================================
+  // PHASE 2: RUNTIME EXECUTION (Detection of Exceptions & Stack Unwinding)
+  // PVM executes bytecode; exceptions are either caught or unwind call stack.
+  // =========================================================================
+  try {
+    const prog = Sk.misceval.asyncToPromise(() => {
+      return Sk.importMainWithBody('<stdin>', false, code, true);
+    });
+    await prog;
 
     const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
     return {
       success: true,
       stdout,
-      stderr,
+      stderr: [],
       executionTimeMs: elapsed,
       exitCode: 0,
       compilerOutput: `python3 main.py\nProcess finished with exit code 0.`,
     };
-  } catch (err: any) {
+  } catch (runtimeErr: any) {
     const elapsed = parseFloat((performance.now() - startTime).toFixed(2));
-    const msg = err?.message || String(err);
-    stderr.push(
-      `Traceback (most recent call last):\n  File "main.py", line 1, in <module>\n${
-        err?.name || 'RuntimeError'
-      }: ${msg}`
-    );
+    const { formatted, type } = formatPhase2Traceback(code, runtimeErr);
+
     return {
       success: false,
-      stdout,
-      stderr,
+      stdout, // Any stdout produced prior to the exception is preserved
+      stderr: [formatted],
       executionTimeMs: elapsed,
       exitCode: 1,
-      compilerOutput: `python3 main.py: Process failed with exception: ${msg}`,
+      compilerOutput: `python3 main.py: Process terminated with unhandled exception (${type})`,
     };
   }
+
 }
 
-function transformPythonExpr(expr: string): string {
-  if (!expr) return '';
-  return expr
-    .replace(/\bf"(.*?)"/g, (_, s) => '`' + s.replace(/\{([^}]+)\}/g, '${$1}') + '`')
-    .replace(/\bf'(.*?)'/g, (_, s) => '`' + s.replace(/\{([^}]+)\}/g, '${$1}') + '`')
-    .replace(/\bmath\.isqrt\((.*?)\)/g, 'Math.floor(Math.sqrt($1))')
-    .replace(/\bmath\.sqrt\((.*?)\)/g, 'Math.sqrt($1)')
-    .replace(/\bmath\.pow\((.*?)\)/g, 'Math.pow($1)')
-    .replace(/\bmath\.floor\((.*?)\)/g, 'Math.floor($1)')
-    .replace(/\bmath\.ceil\((.*?)\)/g, 'Math.ceil($1)')
-    .replace(/\bmath\.pi\b/g, 'Math.PI')
-    .replace(/\.append\((.*?)\)/g, '.push($1)')
-    .replace(/\.extend\((.*?)\)/g, '.push(...$1)')
-    .replace(/\.pop\((.*?)\)/g, '.pop()')
-    .replace(/\band\b/g, '&&')
-    .replace(/\bor\b/g, '||')
-    .replace(/\bnot\b/g, '!')
-    .replace(/\bTrue\b/g, 'true')
-    .replace(/\bFalse\b/g, 'false')
-    .replace(/\bNone\b/g, 'null');
-}
-
-function transformPythonCondition(cond: string): string {
-  return transformPythonExpr(cond).replace(/\b==\b/g, '===').replace(/\b!=\b/g, '!==');
-}
-
-function balancePythonIndents(lines: string[], code: string): string {
-  const openCount = (code.match(/\{/g) || []).length;
-  const closeCount = (code.match(/\}/g) || []).length;
-  let result = code;
-  for (let i = 0; i < openCount - closeCount; i++) {
-    result += '\n}\n';
-  }
-  return result;
-}
 
 // =============================================================
 // 2. JAVASCRIPT ENGINE & ERROR HANDLER (Node / V8 ES2024)
